@@ -36,7 +36,7 @@ This phase explicitly does not implement editor features, remote/collab systems,
 
 ## Project Shape
 
-Start as a standalone workspace with a small number of crates. Avoid mirroring Zed's crate count.
+Start as a standalone workspace that follows Zed's framework style more closely at the base-system layer, while still excluding editor-, project-, language-, remote-, and collab-specific systems from phase one.
 
 Recommended structure:
 
@@ -51,18 +51,65 @@ Recommended structure:
   - app frame composition and visual host logic
 - `crates/workspace`
   - workspace controller
-  - panel registry and panel lifecycle
-  - layout state and restoration
+  - session state and restoration
+  - workspace context and focus coordination
   - command routing to workspace-owned UI
+- `crates/module`
+  - feature module contracts
+  - contribution model
+  - module runtime and registration lifecycle
+- `crates/panel`
+  - panel traits
+  - panel descriptors and registry
+  - panel lifecycle semantics
+- `crates/dock`
+  - dock placement model
+  - visible panel layout
+  - dock restoration semantics
+- `crates/ui`
+  - reusable UI components and base containers
+- `crates/theme`
+  - theme model
+  - tokens and active theme state
+  - theme loading and switching
+- `crates/settings`
+  - settings model
+  - defaults, loading, and overrides
+- `crates/keymap`
+  - keybinding model
+  - default keymap and user overrides
+- `crates/menu`
+  - menu model
+  - command and action bridging
+- `crates/actions`
+  - logical action definitions
+- `crates/commands`
+  - command registry
+  - enablement and dispatch
+- `crates/notifications`
+  - toast and notification model
+  - notification service and host glue
+- `crates/command_palette`
+  - command palette state and UI host
+- `crates/status_bar`
+  - status bar item contracts
+  - status bar host
 - `crates/foundation`
-  - shared actions
-  - settings and theme glue
+  - shared IDs and traits
+  - contexts and common error types
   - serialization models
-  - command and module descriptors
+  - `AppServices`
 - `crates/db`
   - SQLite connection lifecycle
   - sqlx migrations
   - repositories for framework state
+- `crates/paths`
+  - config/data/log/cache path conventions
+- `crates/assets`
+  - default themes, keymaps, fonts, icons, and asset loading
+- `crates/welcome`
+  - default center content
+  - demo feature module for framework validation
 - `assets/`
   - default keymaps
   - themes
@@ -112,9 +159,25 @@ Examples of acceptable copied logic:
 
 Do not copy editor-, project-, extension-, or collab-specific logic into phase one.
 
+## Missing Capability Check
+
+The framework must explicitly account for the following capability lines so they do not disappear into unrelated crates:
+
+- startup and lifecycle
+- paths and assets
+- workspace session state
+- focus and interaction context
+- actions, commands, keymap, menu, and command palette
+- panel and dock separation
+- notifications and status bar hosting
+- module runtime and contributions
+- migrations and repositories around `sqlx + SQLite`
+
+Some of these become dedicated crates in phase one, while others may remain submodules if they stay narrow. They must still be named explicitly in the design.
+
 ## Architecture Overview
 
-The framework should be organized as four layers.
+The framework should be organized as five layers.
 
 ### 1. App Layer
 
@@ -130,7 +193,7 @@ Responsibilities:
 
 The app layer must not contain feature-specific UI logic.
 
-### 2. Shell Layer
+### 2. App Frame Layer
 
 Owns the main application frame.
 
@@ -141,7 +204,7 @@ Responsibilities:
 - expose stable insertion points for workspace and feature modules
 - remain agnostic to business-module internals
 
-The shell is the permanent host of the application and should not become a feature dump.
+The application frame is the permanent host of the application and should not become a feature dump.
 
 ### 3. Workspace Layer
 
@@ -149,10 +212,8 @@ Owns the primary runtime state for the desktop host.
 
 Responsibilities:
 
-- register panel types
-- create panel instances
-- show, hide, focus, and restore panels
-- coordinate workspace-local actions
+- coordinate panel, dock, focus, and session state
+- coordinate workspace-local actions and contexts
 - persist layout and session state
 - provide the current workspace context to commands and modules
 
@@ -173,6 +234,20 @@ Responsibilities:
 
 This layer should stay dependency-light so other crates can build on it without circular coupling.
 
+### 5. Module Layer
+
+Owns the framework's extension mechanism.
+
+Responsibilities:
+
+- define the feature-module interface
+- define contribution types
+- aggregate contributions from modules
+- manage initialization order and failure handling
+- isolate module-facing API from host implementation details
+
+This layer should be one of the framework's stable open-source cores.
+
 ## Runtime Flow
 
 The startup flow should be:
@@ -181,16 +256,18 @@ The startup flow should be:
 2. Global services initialize:
    - settings registry
    - theme registry
+   - paths and asset loading
    - command registry
    - keymap loader
    - notification/toast service
    - state database
 3. `AppServices` is constructed as the shared service hub.
-4. The main window opens.
-5. `AppRoot` mounts the root shell.
-6. `ShellView` composes the fixed desktop regions.
-7. `WorkspaceController` restores persisted state and activates default UI.
-8. Registered feature modules attach their panels, commands, and optional shell contributions.
+4. Static feature modules are loaded through the module runtime.
+5. Contributions are aggregated and routed to the owning subsystems.
+6. The main window opens.
+7. `AppRoot` mounts the root application frame.
+8. `ShellView` composes the fixed desktop regions.
+9. `WorkspaceController` restores persisted state and activates default UI.
 
 This keeps the framework boot flow deterministic and makes later modules attach after the host is alive.
 
@@ -201,7 +278,7 @@ This keeps the framework boot flow deterministic and makes later modules attach 
 Purpose:
 
 - top-level composition entry
-- injects service handles into the root shell
+- injects service handles into the root application frame
 
 Constraints:
 
@@ -231,18 +308,31 @@ Constraints:
 
 Purpose:
 
-- central runtime coordinator for the shell
+- central runtime coordinator for the application frame
 
 Responsibilities:
 
-- panel registration
-- panel creation and lookup
+- panel and dock coordination
 - visibility and focus transitions
-- layout restoration
+- layout and session restoration
 - workspace-scoped command routing
 - session save/restore
 
 This is the most important control point in phase one.
+
+### `ModuleRuntime`
+
+Purpose:
+
+- load and initialize static feature modules
+- aggregate module contributions
+- apply ordering, conflict detection, and failure policy
+
+Responsibilities:
+
+- track module registration success and failure
+- keep optional module failures from taking down the full host
+- provide a stable path for future business modules to attach
 
 ### `CommandRegistry`
 
@@ -287,9 +377,17 @@ Purpose:
 
 ## Module Registration Model
 
-Business or product modules should integrate through a static registration interface rather than editing the host core.
+Business or product modules should integrate through a dedicated module system rather than editing the host core.
 
 ### `FeatureModule`
+
+Each module should expose:
+
+- stable `module_id`
+- human-readable name
+- version
+- required or optional status
+- startup registration entrypoint
 
 Each module should be able to:
 
@@ -300,6 +398,43 @@ Each module should be able to:
 - perform startup initialization against `AppServices`
 
 Phase one uses static module registration at startup. Dynamic loading is out of scope.
+
+### Contribution Types
+
+A feature module may contribute:
+
+- `PanelContribution`
+- `CommandContribution`
+- `KeymapContribution`
+- `MenuContribution`
+- `StatusBarContribution`
+- `SettingsContribution`
+- `NavigationContribution`
+- `PersistenceContribution`
+
+These contributions must be aggregated through `crates/module` and then routed to the systems that own them.
+
+### Contribution Consumers
+
+Each contribution is consumed by a host subsystem:
+
+- panel contributions by `panel`, `dock`, and `workspace`
+- command contributions by `actions`, `commands`, `menu`, `keymap`, and `command_palette`
+- status bar contributions by `status_bar`
+- settings contributions by `settings`
+- persistence contributions by `db`
+- navigation contributions by `workspace` and `app_ui`
+
+### Why `crates/module` Must Exist
+
+The module system is not a miscellaneous shared-types layer. It is the framework's extension mechanism and should be stable, explicit, and reusable as an open-source core.
+
+It should therefore:
+
+- avoid depending on host implementation details where possible
+- expose stable module-facing interfaces
+- centralize conflict detection
+- own optional-versus-required failure policy
 
 ### `PanelDescriptor`
 
@@ -377,6 +512,9 @@ Central service bundle should include at least:
 - `command_registry`
 - `notification_service`
 - `db`
+- `paths`
+- `asset_loader`
+- `module_runtime`
 
 This provides a stable integration surface for future modules.
 
@@ -422,6 +560,13 @@ The `db` crate/module should own:
 - serialization boundaries for persisted runtime state
 
 No other crate should write raw SQL directly.
+
+### Migrations and Repositories
+
+The migration layer and the repository layer should be called out explicitly in implementation, not treated as incidental details.
+
+- migrations define the framework-owned schema
+- repositories define the only supported way for host systems and feature modules to persist framework state
 
 ### Phase-One Tables
 
@@ -470,14 +615,14 @@ Implications:
 
 - platform-sensitive paths should go through an abstraction
 - menu/title-bar behavior should allow future platform branches
-- avoid Windows-only assumptions in core state and shell models
+- avoid Windows-only assumptions in core state and application-frame models
 
 The framework does not need to fully validate macOS/Linux in phase one, but it must not be structured in a way that prevents later adaptation.
 
 ## Must-Have Deliverables for Phase One
 
 - A runnable desktop application on Windows
-- A main shell with:
+- A main application frame with:
   - sidebar
   - center content area
   - bottom panel area
@@ -489,7 +634,7 @@ The framework does not need to fully validate macOS/Linux in phase one, but it m
 - Settings loading
 - Keymap loading
 - Session/layout restoration
-- A static module registration interface
+- A dedicated `crates/module` contribution system
 - At least one demo feature module proving non-invasive integration
 - A completed root-level `tech.md` after implementation
 
@@ -520,6 +665,7 @@ Expected behavior:
 
 - if the database fails to open, startup should fail with a clear error because persistence is part of the framework core
 - if a non-critical module fails to register, the shell should still launch and surface the failure in logs and a user-visible notification when appropriate
+- if a module contribution conflicts with an existing stable id, registration should fail clearly and identify the owning module and contribution kind
 
 ## Testing Strategy
 
@@ -550,13 +696,14 @@ Cover:
 - restoration from persisted workspace state
 - theme/keymap/settings load path
 - module registration path
+- contribution aggregation and conflict handling
 
 ### Manual Acceptance Tests
 
 Verify:
 
 - app launches on Windows
-- shell renders all expected regions
+- application frame renders all expected regions
 - at least three panels can be toggled and focused
 - commands fire consistently from menu, keymap, and command palette
 - theme changes and layout state survive restart
@@ -567,7 +714,7 @@ Verify:
 Phase one is complete when all of the following are true:
 
 - the app starts successfully on Windows
-- the shell layout is present and functional
+- the application frame layout is present and functional
 - at least three panels work through the shared panel system
 - commands are unified across surfaces
 - session/layout persistence works through `sqlx + SQLite`
@@ -604,19 +751,28 @@ Mitigation:
 - keep schema limited to host-state tables
 - forbid ad hoc SQL outside `db`
 
+### Risk: Module API Instability
+
+Mitigation:
+
+- keep `crates/module` focused on contracts and contribution models
+- avoid leaking host implementation details into module-facing APIs
+
 ## Implementation Guidance
 
 When implementation begins, sequence the work roughly as:
 
 1. workspace and crate scaffolding
 2. app startup with GPUI window
-3. shell layout
-4. command registry and action wiring
-5. panel registry and controller
-6. settings/theme/keymap loading
-7. `sqlx + SQLite` state database with migrations
-8. session restoration
-9. demo feature module
-10. `tech.md` completion and verification
+3. paths and assets setup
+4. application frame layout
+5. actions, commands, menu, and keymap wiring
+6. panel and dock systems
+7. module system and contribution aggregation
+8. settings/theme loading
+9. `sqlx + SQLite` database with migrations and repositories
+10. session restoration
+11. demo feature module
+12. `tech.md` completion and verification
 
 This ordering keeps visible progress early while preserving architecture boundaries.
