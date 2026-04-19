@@ -1,0 +1,10 @@
+[package]
+name = "welcome"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/welcome.rs"
+
+[dependencies]

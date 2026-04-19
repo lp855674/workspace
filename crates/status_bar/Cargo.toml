@@ -1,0 +1,11 @@
+[package]
+name = "status_bar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/status_bar.rs"
+
+[dependencies]
+

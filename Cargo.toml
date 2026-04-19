@@ -1,0 +1,41 @@
+[workspace]
+members = [
+  "crates/app",
+  "crates/app_ui",
+  "crates/workspace",
+  "crates/module",
+  "crates/panel",
+  "crates/dock",
+  "crates/ui",
+  "crates/theme",
+  "crates/settings",
+  "crates/keymap",
+  "crates/menu",
+  "crates/actions",
+  "crates/commands",
+  "crates/notifications",
+  "crates/command_palette",
+  "crates/status_bar",
+  "crates/db",
+  "crates/paths",
+  "crates/assets",
+  "crates/foundation",
+  "crates/welcome",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+gpui = { path = "D:/code/zed/crates/gpui" }
+gpui_macros = { path = "D:/code/zed/crates/gpui_macros" }

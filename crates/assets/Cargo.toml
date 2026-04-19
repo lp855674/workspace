@@ -1,0 +1,11 @@
+[package]
+name = "assets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/assets.rs"
+
+[dependencies]
+

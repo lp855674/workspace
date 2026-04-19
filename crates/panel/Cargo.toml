@@ -1,0 +1,11 @@
+[package]
+name = "panel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/panel.rs"
+
+[dependencies]
+
