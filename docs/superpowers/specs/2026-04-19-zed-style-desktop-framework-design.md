@@ -45,10 +45,10 @@ Recommended structure:
   - GPUI application startup
   - global service wiring
   - main window creation
-- `crates/shell`
-  - root desktop shell view
+- `crates/app_ui`
+  - root desktop application frame
   - sidebar/center/bottom/status/toast regions
-  - shell composition and visual host logic
+  - app frame composition and visual host logic
 - `crates/workspace`
   - workspace controller
   - panel registry and panel lifecycle
@@ -59,7 +59,7 @@ Recommended structure:
   - settings and theme glue
   - serialization models
   - command and module descriptors
-- `crates/state_db`
+- `crates/db`
   - SQLite connection lifecycle
   - sqlx migrations
   - repositories for framework state
@@ -376,7 +376,7 @@ Central service bundle should include at least:
 - `theme_manager`
 - `command_registry`
 - `notification_service`
-- `state_db`
+- `db`
 
 This provides a stable integration surface for future modules.
 
@@ -411,9 +411,9 @@ Rationale:
 
 The database is local-only and not a business backend.
 
-### `state_db` Responsibilities
+### `db` Responsibilities
 
-The `state_db` crate/module should own:
+The `db` crate/module should own:
 
 - opening the SQLite database
 - connection pool management
@@ -602,7 +602,7 @@ Mitigation:
 Mitigation:
 
 - keep schema limited to host-state tables
-- forbid ad hoc SQL outside `state_db`
+- forbid ad hoc SQL outside `db`
 
 ## Implementation Guidance
 
