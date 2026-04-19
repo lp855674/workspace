@@ -2,10 +2,10 @@
 name = "menu"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lib]
 path = "src/menu.rs"
 
 [dependencies]
-
