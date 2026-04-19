@@ -7,8 +7,3 @@ license.workspace = true
 [lib]
 path = "src/foundation.rs"
 
-[dependencies]
-anyhow.workspace = true
-serde.workspace = true
-tracing.workspace = true
-
