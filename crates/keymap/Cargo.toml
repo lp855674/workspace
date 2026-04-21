@@ -11,3 +11,7 @@ path = "src/keymap.rs"
 
 [dependencies]
 serde.workspace = true
+
+[dev-dependencies]
+assets = { path = "../assets" }
+serde_json.workspace = true

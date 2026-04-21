@@ -2830,7 +2830,9 @@ dependencies = [
 name = "keymap"
 version = "0.1.0"
 dependencies = [
+ "assets",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4766,6 +4768,9 @@ dependencies = [
 [[package]]
 name = "settings"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "sha1_smol"
@@ -5278,7 +5283,9 @@ dependencies = [
 name = "theme"
 version = "0.1.0"
 dependencies = [
+ "assets",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

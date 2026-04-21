@@ -11,6 +11,8 @@ pub struct ThemeDefinition {
 impl Default for ThemeDefinition {
     fn default() -> Self {
         let mut tokens = BTreeMap::new();
+        tokens.insert("app.background".to_string(), "#111111".to_string());
+        tokens.insert("sidebar.background".to_string(), "#1a1a1a".to_string());
         tokens.insert(
             "status_bar.background".to_string(),
             "#222222".to_string(),
