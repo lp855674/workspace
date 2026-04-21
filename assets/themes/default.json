@@ -1,6 +1,8 @@
 {
   "name": "Default",
   "tokens": {
-    "status_bar.background": "#1f2937"
+    "app.background": "#111111",
+    "sidebar.background": "#1a1a1a",
+    "status_bar.background": "#222222"
   }
 }

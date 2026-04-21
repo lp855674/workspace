@@ -197,11 +197,6 @@ dependencies = [
 [[package]]
 name = "assets"
 version = "0.1.0"
-dependencies = [
- "keymap",
- "serde_json",
- "theme",
-]
 
 [[package]]
 name = "async-broadcast"

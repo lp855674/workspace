@@ -13,7 +13,7 @@ impl Default for ThemeDefinition {
         let mut tokens = BTreeMap::new();
         tokens.insert(
             "status_bar.background".to_string(),
-            "#1f2937".to_string(),
+            "#222222".to_string(),
         );
 
         Self {

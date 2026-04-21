@@ -1,6 +1,4 @@
 [
-  {
-    "command_id": "workspace.toggle_left_dock",
-    "keystroke": "ctrl-b"
-  }
+  { "command_id": "workspace.toggle_left_dock", "keystroke": "ctrl-b" },
+  { "command_id": "command_palette.toggle", "keystroke": "ctrl-shift-p" }
 ]
