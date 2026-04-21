@@ -1,0 +1,27 @@
+/target/
+**/target/
+target*
+
+# Local secrets / config
+.env
+.env.*
+
+# Editor
+.vscode/
+.idea/
+
+.bot/
+
+# WebUI
+webui/node_modules/
+webui/dist/
+
+# local Vite env (may contain token)
+webui/.env
+webui/.env.local
+
+.worktrees/
+.gstack/
+.codex/
+
+.cargo*

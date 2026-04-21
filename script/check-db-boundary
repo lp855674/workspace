@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# DB-02: Only crates/db and crates/console may use sqlx; no SQL in other crates.
+set -e
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+echo "=== 1. Check cargo tree -i sqlx: only db and console may directly depend on sqlx ==="
+TREE=$(cargo tree -i sqlx 2>/dev/null || true)
+if ! echo "$TREE" | head -20 | grep -q "db v"; then
+    echo "ERROR: sqlx dependency tree does not show db as a direct dependent"
+    cargo tree -i sqlx
+    exit 1
+fi
+if ! echo "$TREE" | head -20 | grep -q "console v"; then
+    echo "ERROR: sqlx dependency tree does not show console as a direct dependent"
+    cargo tree -i sqlx
+    exit 1
+fi
+# Ensure no other top-level crate (agent, app, channels, etc.) directly depends on sqlx
+for crate in agent app channels config llm memory session tools utils workspace logging; do
+    if echo "$TREE" | grep -E "^\s*sqlx" -A 1 | grep -q "$crate v.*$" && ! echo "$TREE" | grep -q "db.*$crate"; then
+        echo "ERROR: $crate appears to directly depend on sqlx (only db and console may)"
+        cargo tree -i sqlx
+        exit 1
+    fi
+done
+echo "  OK: db and console are direct sqlx consumers"
+
+echo "=== 2. Scan crates (except db, console) for sqlx:: or sqlx usage ==="
+VIOLATIONS=$(rg "sqlx::|use sqlx|from sqlx" crates/ --glob '!crates/db/**' --glob '!crates/console/**' 2>/dev/null || true)
+if [ -n "$VIOLATIONS" ]; then
+    echo "ERROR: sqlx usage found outside crates/db and crates/console:"
+    echo "$VIOLATIONS"
+    exit 1
+fi
+echo "  OK: no sqlx usage outside db and console crates"
+
+echo "=== 3. Scan crates (except db, console) for sqlx::query / sqlx::query_as in .rs files ==="
+SQL_VIOLATIONS=$(rg -l "sqlx::query|sqlx::query_as" crates/ --glob '!crates/db/**' --glob '!crates/console/**' --type rust 2>/dev/null || true)
+if [ -n "$SQL_VIOLATIONS" ]; then
+    echo "ERROR: SQL queries found outside crates/db and crates/console:"
+    echo "$SQL_VIOLATIONS"
+    exit 1
+fi
+echo "  OK: no SQL outside db and console crates"
+
+echo "=== DB boundary check passed ==="
