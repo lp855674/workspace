@@ -1,9 +1,20 @@
 use core::fmt;
+use std::error::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppError {
     InvalidId,
 }
+
+impl fmt::Display for AppError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidId => formatter.write_str("invalid id"),
+        }
+    }
+}
+
+impl Error for AppError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Id(String);
