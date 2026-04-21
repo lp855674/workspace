@@ -10,3 +10,4 @@ publish = false
 path = "src/theme.rs"
 
 [dependencies]
+serde.workspace = true

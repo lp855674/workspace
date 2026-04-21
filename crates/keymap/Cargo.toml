@@ -10,3 +10,4 @@ publish = false
 path = "src/keymap.rs"
 
 [dependencies]
+serde.workspace = true

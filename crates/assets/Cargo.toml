@@ -10,3 +10,6 @@ publish = false
 path = "src/assets.rs"
 
 [dependencies]
+keymap = { path = "../keymap" }
+serde_json.workspace = true
+theme = { path = "../theme" }

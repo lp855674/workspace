@@ -197,6 +197,11 @@ dependencies = [
 [[package]]
 name = "assets"
 version = "0.1.0"
+dependencies = [
+ "keymap",
+ "serde_json",
+ "theme",
+]
 
 [[package]]
 name = "async-broadcast"
@@ -2829,6 +2834,9 @@ dependencies = [
 [[package]]
 name = "keymap"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "khronos-egl"
@@ -5274,6 +5282,9 @@ dependencies = [
 [[package]]
 name = "theme"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "thiserror"

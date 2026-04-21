@@ -1,0 +1,6 @@
+[
+  {
+    "command_id": "workspace.toggle_left_dock",
+    "keystroke": "ctrl-b"
+  }
+]
