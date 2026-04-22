@@ -54,25 +54,25 @@ impl ModuleRuntime {
             return Err(format!("duplicate module id: {module_id}"));
         }
 
+        let snapshot_command_ids: Vec<String> = module
+            .command_contributions()
+            .iter()
+            .map(|contribution| contribution.command_id.clone())
+            .collect();
+
         let mut incoming_command_ids = BTreeSet::new();
-        for contribution in module.command_contributions() {
-            if !incoming_command_ids.insert(contribution.command_id.clone()) {
-                return Err(format!(
-                    "duplicate command contribution id: {}",
-                    contribution.command_id
-                ));
+        for command_id in &snapshot_command_ids {
+            if !incoming_command_ids.insert(command_id.clone()) {
+                return Err(format!("duplicate command contribution id: {command_id}"));
             }
-            if self.command_ids.contains(&contribution.command_id) {
-                return Err(format!(
-                    "duplicate command contribution id: {}",
-                    contribution.command_id
-                ));
+            if self.command_ids.contains(command_id) {
+                return Err(format!("duplicate command contribution id: {command_id}"));
             }
         }
 
         self.module_ids.insert(module_id);
-        for contribution in module.command_contributions() {
-            self.command_ids.insert(contribution.command_id.clone());
+        for command_id in snapshot_command_ids {
+            self.command_ids.insert(command_id);
         }
 
         Ok(())
