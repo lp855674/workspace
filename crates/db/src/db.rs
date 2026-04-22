@@ -21,7 +21,7 @@ pub async fn connect_sqlite(database_url: &str) -> Result<SqliteConnection, sqlx
 
 /// Open a SQLite pool with foreign key enforcement enabled.
 pub async fn connect_sqlite_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
-    if database_url == "sqlite::memory:" {
+    if sqlite_pool_url_is_unsafe_in_memory(database_url) {
         return Err(sqlx::Error::Configuration(
             "pooled sqlite::memory: URLs are unsafe; use a shared-cache memory URI or a file-backed database".into(),
         ));
@@ -30,4 +30,35 @@ pub async fn connect_sqlite_pool(database_url: &str) -> Result<SqlitePool, sqlx:
     SqlitePoolOptions::new()
         .connect_with(sqlite_connect_options(database_url)?)
         .await
+}
+
+fn sqlite_pool_url_is_unsafe_in_memory(database_url: &str) -> bool {
+    let normalized_url = database_url
+        .strip_prefix("sqlite://")
+        .or_else(|| database_url.strip_prefix("sqlite:"))
+        .unwrap_or(database_url);
+    let mut database_and_params = normalized_url.splitn(2, '?');
+    let database = database_and_params.next().unwrap_or_default();
+    let params = database_and_params.next().unwrap_or_default();
+
+    if database == ":memory:" {
+        return true;
+    }
+
+    let mut mode_is_memory = false;
+    let mut cache_is_private = false;
+
+    for pair in params.split('&').filter(|pair| !pair.is_empty()) {
+        let mut key_and_value = pair.splitn(2, '=');
+        let key = key_and_value.next().unwrap_or_default();
+        let value = key_and_value.next().unwrap_or_default();
+
+        match (key, value) {
+            ("mode", "memory") => mode_is_memory = true,
+            ("cache", "private") => cache_is_private = true,
+            _ => {}
+        }
+    }
+
+    mode_is_memory && cache_is_private
 }

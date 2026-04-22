@@ -214,19 +214,29 @@ async fn sqlite_helpers_enable_foreign_keys() {
 
 #[tokio::test]
 async fn sqlite_pool_helper_rejects_connection_local_memory_url() {
-    let error = connect_sqlite_pool("sqlite::memory:")
-        .await
-        .expect_err("raw sqlite::memory: should be rejected for pools");
+    assert_pool_memory_url_rejected("sqlite::memory:").await;
+}
 
-    match error {
-        sqlx::Error::Configuration(message) => {
-            assert_eq!(
-                message.to_string(),
-                "pooled sqlite::memory: URLs are unsafe; use a shared-cache memory URI or a file-backed database"
-            );
-        }
-        other_error => panic!("expected configuration error, got {other_error}"),
-    }
+#[tokio::test]
+async fn sqlite_pool_helper_rejects_uri_memory_path_url() {
+    assert_pool_memory_url_rejected("sqlite://:memory:").await;
+}
+
+#[tokio::test]
+async fn sqlite_pool_helper_rejects_private_cache_memory_uri() {
+    assert_pool_memory_url_rejected("sqlite://?mode=memory&cache=private").await;
+}
+
+#[tokio::test]
+async fn sqlite_pool_helper_allows_shared_cache_memory_uri() {
+    let pool = connect_sqlite_pool(shared_cache_memory_pool_url())
+        .await
+        .expect("shared-cache in-memory sqlite pool should open");
+    let value = sqlx::query_scalar::<_, i64>("select 1;")
+        .fetch_one(&pool)
+        .await
+        .expect("shared-cache in-memory sqlite pool should execute queries");
+    assert_eq!(value, 1_i64);
 }
 
 async fn connect_and_migrate() -> SqliteConnection {
@@ -242,4 +252,20 @@ async fn connect_and_migrate() -> SqliteConnection {
 
 fn shared_cache_memory_pool_url() -> &'static str {
     "sqlite:file:db-tests-pool?mode=memory&cache=shared"
+}
+
+async fn assert_pool_memory_url_rejected(database_url: &str) {
+    let error = connect_sqlite_pool(database_url)
+        .await
+        .expect_err("unsafe in-memory sqlite pool URL should be rejected");
+
+    match error {
+        sqlx::Error::Configuration(message) => {
+            assert_eq!(
+                message.to_string(),
+                "pooled sqlite::memory: URLs are unsafe; use a shared-cache memory URI or a file-backed database"
+            );
+        }
+        other_error => panic!("expected configuration error, got {other_error}"),
+    }
 }
