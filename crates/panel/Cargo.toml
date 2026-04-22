@@ -10,3 +10,4 @@ publish = false
 path = "src/panel.rs"
 
 [dependencies]
+dock = { path = "../dock" }
