@@ -1,5 +1,5 @@
-use db::initial_migration_sql;
-use sqlx::{Connection, Row, SqliteConnection};
+use db::{connect_sqlite, connect_sqlite_pool, initial_migration_sql};
+use sqlx::{Row, SqliteConnection};
 use std::collections::BTreeSet;
 
 #[tokio::test]
@@ -191,14 +191,31 @@ async fn initial_migration_enforces_module_state_json_validity() {
     assert!(invalid_json.is_err());
 }
 
-async fn connect_and_migrate() -> SqliteConnection {
-    let mut connection = SqliteConnection::connect("sqlite::memory:")
+#[tokio::test]
+async fn sqlite_helpers_enable_foreign_keys() {
+    let mut connection = connect_sqlite("sqlite::memory:")
         .await
         .expect("in-memory sqlite should open");
-    sqlx::query("pragma foreign_keys = on;")
-        .execute(&mut connection)
+    let foreign_keys_enabled = sqlx::query_scalar::<_, i64>("pragma foreign_keys;")
+        .fetch_one(&mut connection)
         .await
-        .expect("enabling foreign keys should work");
+        .expect("reading foreign_keys pragma should work");
+    assert_eq!(foreign_keys_enabled, 1_i64);
+
+    let pool = connect_sqlite_pool("sqlite::memory:")
+        .await
+        .expect("in-memory sqlite pool should open");
+    let pool_foreign_keys_enabled = sqlx::query_scalar::<_, i64>("pragma foreign_keys;")
+        .fetch_one(&pool)
+        .await
+        .expect("reading foreign_keys pragma through pool should work");
+    assert_eq!(pool_foreign_keys_enabled, 1_i64);
+}
+
+async fn connect_and_migrate() -> SqliteConnection {
+    let mut connection = connect_sqlite("sqlite::memory:")
+        .await
+        .expect("in-memory sqlite should open");
     sqlx::raw_sql(initial_migration_sql())
         .execute(&mut connection)
         .await
