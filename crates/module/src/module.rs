@@ -68,6 +68,40 @@ pub trait FeatureModule {
     fn command_contributions(&self) -> &[CommandContribution];
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegisteredModule {
+    module_id: ModuleId,
+    command_ids: Vec<CommandId>,
+}
+
+impl RegisteredModule {
+    fn try_snapshot(module: &dyn FeatureModule) -> Result<(Self, Vec<CommandId>), RegisterModuleError> {
+        let module_id =
+            ModuleId::try_new(module.module_id()).map_err(RegisterModuleError::InvalidModuleId)?;
+        let command_ids: Vec<CommandId> = module
+            .command_contributions()
+            .iter()
+            .map(|contribution| contribution.command_id().clone())
+            .collect();
+
+        Ok((
+            Self {
+                module_id,
+                command_ids: command_ids.clone(),
+            },
+            command_ids,
+        ))
+    }
+
+    pub fn module_id(&self) -> &ModuleId {
+        &self.module_id
+    }
+
+    pub fn command_ids(&self) -> &[CommandId] {
+        &self.command_ids
+    }
+}
+
 pub struct SimpleModule {
     module_id: String,
     commands: Vec<CommandContribution>,
@@ -117,22 +151,16 @@ impl Error for RegisterModuleError {}
 pub struct ModuleRuntime {
     module_ids: BTreeSet<ModuleId>,
     command_ids: BTreeSet<CommandId>,
-    modules: Vec<Box<dyn FeatureModule>>,
+    modules: Vec<RegisteredModule>,
 }
 
 impl ModuleRuntime {
     pub fn register(&mut self, module: Box<dyn FeatureModule>) -> Result<(), RegisterModuleError> {
-        let module_id = ModuleId::try_new(module.module_id())
-            .map_err(RegisterModuleError::InvalidModuleId)?;
+        let (retained_module, snapshot_command_ids) = RegisteredModule::try_snapshot(module.as_ref())?;
+        let module_id = retained_module.module_id().clone();
         if self.module_ids.contains(&module_id) {
             return Err(RegisterModuleError::DuplicateModuleId(module_id));
         }
-
-        let snapshot_command_ids: Vec<CommandId> = module
-            .command_contributions()
-            .iter()
-            .map(|contribution| contribution.command_id().clone())
-            .collect();
 
         let mut incoming_command_ids = BTreeSet::new();
         for command_id in &snapshot_command_ids {
@@ -148,12 +176,16 @@ impl ModuleRuntime {
         for command_id in snapshot_command_ids {
             self.command_ids.insert(command_id);
         }
-        self.modules.push(module);
+        self.modules.push(retained_module);
 
         Ok(())
     }
 
     pub fn retained_module_count(&self) -> usize {
         self.modules.len()
+    }
+
+    pub fn retained_modules(&self) -> &[RegisteredModule] {
+        &self.modules
     }
 }

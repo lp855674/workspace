@@ -4,6 +4,7 @@ use module::{
     SimpleModule,
 };
 use std::cell::Cell;
+use std::rc::Rc;
 
 fn command(command_id: &str) -> CommandContribution {
     CommandContribution::try_new(command_id).unwrap()
@@ -51,6 +52,50 @@ impl StatefulModule {
             first_snapshot,
             second_snapshot,
             call_count: Cell::new(0),
+        }
+    }
+}
+
+struct ToggleableModule {
+    use_second_snapshot: Rc<Cell<bool>>,
+    first_module_id: String,
+    second_module_id: String,
+    first_commands: Vec<CommandContribution>,
+    second_commands: Vec<CommandContribution>,
+}
+
+impl ToggleableModule {
+    fn new(
+        use_second_snapshot: Rc<Cell<bool>>,
+        first_module_id: impl Into<String>,
+        second_module_id: impl Into<String>,
+        first_commands: Vec<CommandContribution>,
+        second_commands: Vec<CommandContribution>,
+    ) -> Self {
+        Self {
+            use_second_snapshot,
+            first_module_id: first_module_id.into(),
+            second_module_id: second_module_id.into(),
+            first_commands,
+            second_commands,
+        }
+    }
+}
+
+impl FeatureModule for ToggleableModule {
+    fn module_id(&self) -> &str {
+        if self.use_second_snapshot.get() {
+            &self.second_module_id
+        } else {
+            &self.first_module_id
+        }
+    }
+
+    fn command_contributions(&self) -> &[CommandContribution] {
+        if self.use_second_snapshot.get() {
+            &self.second_commands
+        } else {
+            &self.first_commands
         }
     }
 }
@@ -133,6 +178,71 @@ fn module_runtime_register_uses_single_snapshot_for_stateful_module() {
         result,
         Err(RegisterModuleError::DuplicateCommandId(_))
     ));
+}
+
+#[test]
+fn module_runtime_retains_canonical_module_id_snapshot() {
+    let mut runtime = ModuleRuntime::default();
+    let first = SimpleModule::with_command("  welcome  ", command("command.open"));
+    assert!(runtime.register(Box::new(first)).is_ok());
+
+    assert_eq!(runtime.retained_modules().len(), 1);
+    assert_eq!(
+        runtime.retained_modules()[0].module_id().as_str(),
+        "welcome"
+    );
+
+    let duplicate = SimpleModule::with_command("welcome", command("command.close"));
+    let result = runtime.register(Box::new(duplicate));
+    match result {
+        Err(RegisterModuleError::DuplicateModuleId(module_id)) => {
+            assert_eq!(module_id.as_str(), "welcome");
+        }
+        other => panic!("expected duplicate module id error, got {other:?}"),
+    }
+}
+
+#[test]
+fn module_runtime_retained_metadata_is_immutable_after_registration() {
+    let mut runtime = ModuleRuntime::default();
+    let use_second_snapshot = Rc::new(Cell::new(false));
+    let mutable_module = ToggleableModule::new(
+        Rc::clone(&use_second_snapshot),
+        "alpha",
+        "beta",
+        vec![command("command.alpha")],
+        vec![command("command.beta")],
+    );
+
+    assert!(runtime.register(Box::new(mutable_module)).is_ok());
+    assert_eq!(runtime.retained_modules().len(), 1);
+    assert_eq!(runtime.retained_modules()[0].module_id().as_str(), "alpha");
+    assert_eq!(
+        runtime.retained_modules()[0].command_ids()[0].as_str(),
+        "command.alpha"
+    );
+
+    use_second_snapshot.set(true);
+    assert_eq!(runtime.retained_modules()[0].module_id().as_str(), "alpha");
+    assert_eq!(
+        runtime.retained_modules()[0].command_ids()[0].as_str(),
+        "command.alpha"
+    );
+
+    let duplicate_initial = SimpleModule::with_command("alpha", command("command.gamma"));
+    assert!(matches!(
+        runtime.register(Box::new(duplicate_initial)),
+        Err(RegisterModuleError::DuplicateModuleId(_))
+    ));
+
+    let duplicate_initial_command = SimpleModule::with_command("gamma", command("command.alpha"));
+    assert!(matches!(
+        runtime.register(Box::new(duplicate_initial_command)),
+        Err(RegisterModuleError::DuplicateCommandId(_))
+    ));
+
+    let second_snapshot_values = SimpleModule::with_command("beta", command("command.beta"));
+    assert!(runtime.register(Box::new(second_snapshot_values)).is_ok());
 }
 
 #[test]
