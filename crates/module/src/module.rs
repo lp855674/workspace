@@ -1,14 +1,23 @@
 use std::collections::BTreeSet;
+use commands::{CommandDescriptorError, CommandId};
 
 pub struct CommandContribution {
-    pub command_id: String,
+    command_id: CommandId,
 }
 
 impl CommandContribution {
-    pub fn new(command_id: impl Into<String>) -> Self {
-        Self {
-            command_id: command_id.into(),
-        }
+    pub fn new(command_id: CommandId) -> Self {
+        Self { command_id }
+    }
+
+    pub fn try_new(command_id: impl Into<String>) -> Result<Self, CommandDescriptorError> {
+        Ok(Self {
+            command_id: CommandId::try_new(command_id)?,
+        })
+    }
+
+    pub fn command_id(&self) -> &CommandId {
+        &self.command_id
     }
 }
 
@@ -44,7 +53,7 @@ impl FeatureModule for SimpleModule {
 #[derive(Default)]
 pub struct ModuleRuntime {
     module_ids: BTreeSet<String>,
-    command_ids: BTreeSet<String>,
+    command_ids: BTreeSet<CommandId>,
 }
 
 impl ModuleRuntime {
@@ -54,10 +63,10 @@ impl ModuleRuntime {
             return Err(format!("duplicate module id: {module_id}"));
         }
 
-        let snapshot_command_ids: Vec<String> = module
+        let snapshot_command_ids: Vec<CommandId> = module
             .command_contributions()
             .iter()
-            .map(|contribution| contribution.command_id.clone())
+            .map(|contribution| contribution.command_id().clone())
             .collect();
 
         let mut incoming_command_ids = BTreeSet::new();

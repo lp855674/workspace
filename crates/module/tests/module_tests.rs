@@ -1,5 +1,10 @@
+use commands::CommandDescriptorError;
 use module::{CommandContribution, FeatureModule, ModuleRuntime, SimpleModule};
 use std::cell::Cell;
+
+fn command(command_id: &str) -> CommandContribution {
+    CommandContribution::try_new(command_id).unwrap()
+}
 
 struct TestModule {
     module_id: String,
@@ -65,8 +70,8 @@ impl FeatureModule for StatefulModule {
 
 #[test]
 fn module_runtime_rejects_duplicate_command_ids_across_modules() {
-    let first = SimpleModule::with_command("welcome", CommandContribution::new("command.open"));
-    let second = SimpleModule::with_command("inspector", CommandContribution::new("command.open"));
+    let first = SimpleModule::with_command("welcome", command("command.open"));
+    let second = SimpleModule::with_command("inspector", command("command.open"));
 
     let mut runtime = ModuleRuntime::default();
     assert!(runtime.register(Box::new(first)).is_ok());
@@ -77,10 +82,7 @@ fn module_runtime_rejects_duplicate_command_ids_across_modules() {
 fn module_runtime_rejects_duplicate_command_ids_within_module() {
     let module = TestModule::new(
         "welcome",
-        vec![
-            CommandContribution::new("command.open"),
-            CommandContribution::new("command.open"),
-        ],
+        vec![command("command.open"), command("command.open")],
     );
 
     let mut runtime = ModuleRuntime::default();
@@ -89,8 +91,8 @@ fn module_runtime_rejects_duplicate_command_ids_within_module() {
 
 #[test]
 fn module_runtime_rejects_duplicate_module_ids() {
-    let first = SimpleModule::with_command("welcome", CommandContribution::new("command.open"));
-    let second = SimpleModule::with_command("welcome", CommandContribution::new("command.close"));
+    let first = SimpleModule::with_command("welcome", command("command.open"));
+    let second = SimpleModule::with_command("welcome", command("command.close"));
 
     let mut runtime = ModuleRuntime::default();
     assert!(runtime.register(Box::new(first)).is_ok());
@@ -100,19 +102,33 @@ fn module_runtime_rejects_duplicate_module_ids() {
 #[test]
 fn module_runtime_register_uses_single_snapshot_for_stateful_module() {
     let mut runtime = ModuleRuntime::default();
-    let first = SimpleModule::with_command("welcome", CommandContribution::new("command.open"));
+    let first = SimpleModule::with_command("welcome", command("command.open"));
     assert!(runtime.register(Box::new(first)).is_ok());
 
     let stateful = StatefulModule::new(
         "stateful",
-        vec![CommandContribution::new("command.unique")],
-        vec![CommandContribution::new("command.open")],
+        vec![command("command.unique")],
+        vec![command("command.open")],
     );
     assert!(runtime.register(Box::new(stateful)).is_ok());
 
-    let duplicate_of_first_snapshot =
-        SimpleModule::with_command("followup", CommandContribution::new("command.unique"));
+    let duplicate_of_first_snapshot = SimpleModule::with_command("followup", command("command.unique"));
     assert!(runtime
         .register(Box::new(duplicate_of_first_snapshot))
         .is_err());
+}
+
+#[test]
+fn command_contribution_rejects_empty_command_id() {
+    let result = CommandContribution::try_new("   ");
+    assert!(matches!(result, Err(CommandDescriptorError::EmptyId)));
+}
+
+#[test]
+fn command_contribution_rejects_whitespace_in_command_id() {
+    let result = CommandContribution::try_new("command open");
+    assert!(matches!(
+        result,
+        Err(CommandDescriptorError::IdContainsWhitespace)
+    ));
 }

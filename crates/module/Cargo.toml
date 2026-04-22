@@ -10,3 +10,4 @@ publish = false
 path = "src/module.rs"
 
 [dependencies]
+commands = { path = "../commands" }
