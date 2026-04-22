@@ -82,6 +82,26 @@ impl ToggleableModule {
     }
 }
 
+struct DropObservedModule {
+    module_id: String,
+    commands: Vec<CommandContribution>,
+    drop_count: Rc<Cell<usize>>,
+}
+
+impl DropObservedModule {
+    fn new(
+        module_id: impl Into<String>,
+        commands: Vec<CommandContribution>,
+        drop_count: Rc<Cell<usize>>,
+    ) -> Self {
+        Self {
+            module_id: module_id.into(),
+            commands,
+            drop_count,
+        }
+    }
+}
+
 impl FeatureModule for ToggleableModule {
     fn module_id(&self) -> &str {
         if self.use_second_snapshot.get() {
@@ -97,6 +117,22 @@ impl FeatureModule for ToggleableModule {
         } else {
             &self.first_commands
         }
+    }
+}
+
+impl FeatureModule for DropObservedModule {
+    fn module_id(&self) -> &str {
+        &self.module_id
+    }
+
+    fn command_contributions(&self) -> &[CommandContribution] {
+        &self.commands
+    }
+}
+
+impl Drop for DropObservedModule {
+    fn drop(&mut self) {
+        self.drop_count.set(self.drop_count.get() + 1);
     }
 }
 
@@ -288,6 +324,26 @@ fn module_runtime_retains_registered_modules_only_after_successful_validation() 
     let second = SimpleModule::with_command("settings", command("command.close"));
     assert!(runtime.register(Box::new(second)).is_ok());
     assert_eq!(runtime.retained_module_count(), 2);
+}
+
+#[test]
+fn module_runtime_keeps_registered_module_alive_until_runtime_drop() {
+    let drop_count = Rc::new(Cell::new(0));
+
+    {
+        let mut runtime = ModuleRuntime::default();
+        let module = DropObservedModule::new(
+            "welcome",
+            vec![command("command.open")],
+            Rc::clone(&drop_count),
+        );
+
+        assert!(runtime.register(Box::new(module)).is_ok());
+        assert_eq!(drop_count.get(), 0);
+        assert_eq!(runtime.retained_module_count(), 1);
+    }
+
+    assert_eq!(drop_count.get(), 1);
 }
 
 #[test]

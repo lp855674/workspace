@@ -152,6 +152,7 @@ pub struct ModuleRuntime {
     module_ids: BTreeSet<ModuleId>,
     command_ids: BTreeSet<CommandId>,
     modules: Vec<RegisteredModule>,
+    live_modules: Vec<Box<dyn FeatureModule>>,
 }
 
 impl ModuleRuntime {
@@ -177,6 +178,7 @@ impl ModuleRuntime {
             self.command_ids.insert(command_id);
         }
         self.modules.push(retained_module);
+        self.live_modules.push(module);
 
         Ok(())
     }
