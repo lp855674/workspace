@@ -21,6 +21,12 @@ pub async fn connect_sqlite(database_url: &str) -> Result<SqliteConnection, sqlx
 
 /// Open a SQLite pool with foreign key enforcement enabled.
 pub async fn connect_sqlite_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
+    if database_url == "sqlite::memory:" {
+        return Err(sqlx::Error::Configuration(
+            "pooled sqlite::memory: URLs are unsafe; use a shared-cache memory URI or a file-backed database".into(),
+        ));
+    }
+
     SqlitePoolOptions::new()
         .connect_with(sqlite_connect_options(database_url)?)
         .await

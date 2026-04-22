@@ -202,14 +202,31 @@ async fn sqlite_helpers_enable_foreign_keys() {
         .expect("reading foreign_keys pragma should work");
     assert_eq!(foreign_keys_enabled, 1_i64);
 
-    let pool = connect_sqlite_pool("sqlite::memory:")
+    let pool = connect_sqlite_pool(shared_cache_memory_pool_url())
         .await
-        .expect("in-memory sqlite pool should open");
+        .expect("shared-cache in-memory sqlite pool should open");
     let pool_foreign_keys_enabled = sqlx::query_scalar::<_, i64>("pragma foreign_keys;")
         .fetch_one(&pool)
         .await
         .expect("reading foreign_keys pragma through pool should work");
     assert_eq!(pool_foreign_keys_enabled, 1_i64);
+}
+
+#[tokio::test]
+async fn sqlite_pool_helper_rejects_connection_local_memory_url() {
+    let error = connect_sqlite_pool("sqlite::memory:")
+        .await
+        .expect_err("raw sqlite::memory: should be rejected for pools");
+
+    match error {
+        sqlx::Error::Configuration(message) => {
+            assert_eq!(
+                message.to_string(),
+                "pooled sqlite::memory: URLs are unsafe; use a shared-cache memory URI or a file-backed database"
+            );
+        }
+        other_error => panic!("expected configuration error, got {other_error}"),
+    }
 }
 
 async fn connect_and_migrate() -> SqliteConnection {
@@ -221,4 +238,8 @@ async fn connect_and_migrate() -> SqliteConnection {
         .await
         .expect("initial migration should execute");
     connection
+}
+
+fn shared_cache_memory_pool_url() -> &'static str {
+    "sqlite:file:db-tests-pool?mode=memory&cache=shared"
 }
