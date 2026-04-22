@@ -5,4 +5,6 @@ fn visible_dock_state_with_visible_has_single_panel() {
     let state = VisibleDockState::with_visible(DockPlacement::Left, "welcome.panel");
 
     assert_eq!(state.visible_panels.len(), 1);
+    assert_eq!(state.visible_panels[0].placement, DockPlacement::Left);
+    assert_eq!(state.visible_panels[0].panel_id, "welcome.panel");
 }

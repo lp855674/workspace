@@ -1,4 +1,10 @@
-use dock::DockPlacement;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DockPlacement {
+    Left,
+    Center,
+    Bottom,
+    Right,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PanelDescriptor {

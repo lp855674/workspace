@@ -1,10 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DockPlacement {
-    Left,
-    Center,
-    Bottom,
-    Right,
-}
+pub use panel::DockPlacement;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VisiblePanel {
