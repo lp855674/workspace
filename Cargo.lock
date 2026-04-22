@@ -3111,6 +3111,9 @@ dependencies = [
 [[package]]
 name = "menu"
 version = "0.1.0"
+dependencies = [
+ "commands",
+]
 
 [[package]]
 name = "metal"

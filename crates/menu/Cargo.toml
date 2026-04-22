@@ -10,3 +10,4 @@ publish = false
 path = "src/menu.rs"
 
 [dependencies]
+commands = { path = "../commands" }
