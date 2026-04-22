@@ -1,5 +1,47 @@
 use std::collections::BTreeSet;
+use std::error::Error;
+use std::fmt;
 use commands::{CommandDescriptorError, CommandId};
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ModuleId(String);
+
+impl ModuleId {
+    pub fn try_new(value: impl Into<String>) -> Result<Self, ModuleIdError> {
+        let value = value.into();
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(ModuleIdError::EmptyId);
+        }
+
+        Ok(Self(trimmed.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ModuleId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModuleIdError {
+    EmptyId,
+}
+
+impl fmt::Display for ModuleIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyId => formatter.write_str("module id cannot be empty"),
+        }
+    }
+}
+
+impl Error for ModuleIdError {}
 
 pub struct CommandContribution {
     command_id: CommandId,
@@ -50,17 +92,39 @@ impl FeatureModule for SimpleModule {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RegisterModuleError {
+    InvalidModuleId(ModuleIdError),
+    DuplicateModuleId(ModuleId),
+    DuplicateCommandId(CommandId),
+}
+
+impl fmt::Display for RegisterModuleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidModuleId(error) => write!(formatter, "invalid module id: {error}"),
+            Self::DuplicateModuleId(module_id) => write!(formatter, "duplicate module id: {module_id}"),
+            Self::DuplicateCommandId(command_id) => {
+                write!(formatter, "duplicate command contribution id: {command_id}")
+            }
+        }
+    }
+}
+
+impl Error for RegisterModuleError {}
+
 #[derive(Default)]
 pub struct ModuleRuntime {
-    module_ids: BTreeSet<String>,
+    module_ids: BTreeSet<ModuleId>,
     command_ids: BTreeSet<CommandId>,
 }
 
 impl ModuleRuntime {
-    pub fn register(&mut self, module: Box<dyn FeatureModule>) -> Result<(), String> {
-        let module_id = module.module_id().to_owned();
+    pub fn register(&mut self, module: Box<dyn FeatureModule>) -> Result<(), RegisterModuleError> {
+        let module_id = ModuleId::try_new(module.module_id())
+            .map_err(RegisterModuleError::InvalidModuleId)?;
         if self.module_ids.contains(&module_id) {
-            return Err(format!("duplicate module id: {module_id}"));
+            return Err(RegisterModuleError::DuplicateModuleId(module_id));
         }
 
         let snapshot_command_ids: Vec<CommandId> = module
@@ -72,10 +136,10 @@ impl ModuleRuntime {
         let mut incoming_command_ids = BTreeSet::new();
         for command_id in &snapshot_command_ids {
             if !incoming_command_ids.insert(command_id.clone()) {
-                return Err(format!("duplicate command contribution id: {command_id}"));
+                return Err(RegisterModuleError::DuplicateCommandId(command_id.clone()));
             }
             if self.command_ids.contains(command_id) {
-                return Err(format!("duplicate command contribution id: {command_id}"));
+                return Err(RegisterModuleError::DuplicateCommandId(command_id.clone()));
             }
         }
 

@@ -1,5 +1,8 @@
 use commands::CommandDescriptorError;
-use module::{CommandContribution, FeatureModule, ModuleRuntime, SimpleModule};
+use module::{
+    CommandContribution, FeatureModule, ModuleIdError, ModuleRuntime, RegisterModuleError,
+    SimpleModule,
+};
 use std::cell::Cell;
 
 fn command(command_id: &str) -> CommandContribution {
@@ -75,7 +78,11 @@ fn module_runtime_rejects_duplicate_command_ids_across_modules() {
 
     let mut runtime = ModuleRuntime::default();
     assert!(runtime.register(Box::new(first)).is_ok());
-    assert!(runtime.register(Box::new(second)).is_err());
+    let result = runtime.register(Box::new(second));
+    assert!(matches!(
+        result,
+        Err(RegisterModuleError::DuplicateCommandId(_))
+    ));
 }
 
 #[test]
@@ -86,7 +93,11 @@ fn module_runtime_rejects_duplicate_command_ids_within_module() {
     );
 
     let mut runtime = ModuleRuntime::default();
-    assert!(runtime.register(Box::new(module)).is_err());
+    let result = runtime.register(Box::new(module));
+    assert!(matches!(
+        result,
+        Err(RegisterModuleError::DuplicateCommandId(_))
+    ));
 }
 
 #[test]
@@ -96,7 +107,11 @@ fn module_runtime_rejects_duplicate_module_ids() {
 
     let mut runtime = ModuleRuntime::default();
     assert!(runtime.register(Box::new(first)).is_ok());
-    assert!(runtime.register(Box::new(second)).is_err());
+    let result = runtime.register(Box::new(second));
+    assert!(matches!(
+        result,
+        Err(RegisterModuleError::DuplicateModuleId(_))
+    ));
 }
 
 #[test]
@@ -113,9 +128,35 @@ fn module_runtime_register_uses_single_snapshot_for_stateful_module() {
     assert!(runtime.register(Box::new(stateful)).is_ok());
 
     let duplicate_of_first_snapshot = SimpleModule::with_command("followup", command("command.unique"));
-    assert!(runtime
-        .register(Box::new(duplicate_of_first_snapshot))
-        .is_err());
+    let result = runtime.register(Box::new(duplicate_of_first_snapshot));
+    assert!(matches!(
+        result,
+        Err(RegisterModuleError::DuplicateCommandId(_))
+    ));
+}
+
+#[test]
+fn module_runtime_rejects_empty_module_id() {
+    let module = SimpleModule::with_command("", command("command.open"));
+    let mut runtime = ModuleRuntime::default();
+
+    let result = runtime.register(Box::new(module));
+    assert!(matches!(
+        result,
+        Err(RegisterModuleError::InvalidModuleId(ModuleIdError::EmptyId))
+    ));
+}
+
+#[test]
+fn module_runtime_rejects_whitespace_only_module_id() {
+    let module = SimpleModule::with_command("   ", command("command.open"));
+    let mut runtime = ModuleRuntime::default();
+
+    let result = runtime.register(Box::new(module));
+    assert!(matches!(
+        result,
+        Err(RegisterModuleError::InvalidModuleId(ModuleIdError::EmptyId))
+    ));
 }
 
 #[test]
