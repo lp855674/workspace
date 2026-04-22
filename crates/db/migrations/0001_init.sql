@@ -7,11 +7,13 @@ create table panel_states (
     session_id text not null,
     panel_id text not null,
     dock text not null,
-    visible integer not null
+    visible integer not null,
+    primary key (session_id, panel_id),
+    foreign key (session_id) references workspace_sessions(session_id)
 );
 
 create table command_history (
-    command_id text not null,
+    command_id text primary key,
     created_at text not null
 );
 

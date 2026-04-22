@@ -10,3 +10,7 @@ publish = false
 path = "src/db.rs"
 
 [dependencies]
+
+[dev-dependencies]
+sqlx.workspace = true
+tokio.workspace = true
