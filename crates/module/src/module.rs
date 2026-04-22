@@ -117,6 +117,7 @@ impl Error for RegisterModuleError {}
 pub struct ModuleRuntime {
     module_ids: BTreeSet<ModuleId>,
     command_ids: BTreeSet<CommandId>,
+    modules: Vec<Box<dyn FeatureModule>>,
 }
 
 impl ModuleRuntime {
@@ -147,7 +148,12 @@ impl ModuleRuntime {
         for command_id in snapshot_command_ids {
             self.command_ids.insert(command_id);
         }
+        self.modules.push(module);
 
         Ok(())
+    }
+
+    pub fn retained_module_count(&self) -> usize {
+        self.modules.len()
     }
 }

@@ -160,6 +160,27 @@ fn module_runtime_rejects_whitespace_only_module_id() {
 }
 
 #[test]
+fn module_runtime_retains_registered_modules_only_after_successful_validation() {
+    let mut runtime = ModuleRuntime::default();
+    assert_eq!(runtime.retained_module_count(), 0);
+
+    let first = SimpleModule::with_command("welcome", command("command.open"));
+    assert!(runtime.register(Box::new(first)).is_ok());
+    assert_eq!(runtime.retained_module_count(), 1);
+
+    let duplicate_command = SimpleModule::with_command("inspector", command("command.open"));
+    assert!(matches!(
+        runtime.register(Box::new(duplicate_command)),
+        Err(RegisterModuleError::DuplicateCommandId(_))
+    ));
+    assert_eq!(runtime.retained_module_count(), 1);
+
+    let second = SimpleModule::with_command("settings", command("command.close"));
+    assert!(runtime.register(Box::new(second)).is_ok());
+    assert_eq!(runtime.retained_module_count(), 2);
+}
+
+#[test]
 fn command_contribution_rejects_empty_command_id() {
     let result = CommandContribution::try_new("   ");
     assert!(matches!(result, Err(CommandDescriptorError::EmptyId)));
