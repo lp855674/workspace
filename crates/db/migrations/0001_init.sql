@@ -1,5 +1,5 @@
 create table workspace_sessions (
-    session_id text primary key,
+    session_id text not null primary key,
     created_at text not null
 );
 
@@ -13,12 +13,12 @@ create table panel_states (
 );
 
 create table command_history (
-    command_id text primary key,
+    command_id text not null primary key,
     created_at text not null
 );
 
 create table notifications (
-    notification_id text primary key,
+    notification_id text not null primary key,
     level text not null check (level in ('info', 'warning', 'error')),
     message text not null,
     created_at text not null

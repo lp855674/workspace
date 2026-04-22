@@ -105,6 +105,21 @@ async fn initial_migration_enforces_panel_states_command_history_and_notificatio
             .await;
     assert!(duplicate_command_id.is_err());
 
+    let null_workspace_session_id =
+        sqlx::query("insert into workspace_sessions (session_id, created_at) values (?, ?)")
+            .bind(Option::<&str>::None)
+            .bind("2026-01-01T00:02:00Z")
+            .execute(&mut connection)
+            .await;
+    assert!(null_workspace_session_id.is_err());
+
+    let null_command_id = sqlx::query("insert into command_history (command_id, created_at) values (?, ?)")
+        .bind(Option::<&str>::None)
+        .bind("2026-01-01T00:02:00Z")
+        .execute(&mut connection)
+        .await;
+    assert!(null_command_id.is_err());
+
     // Keep this list in sync with the schema's explicit closed set.
     let allowed_levels = ["info", "warning", "error"];
     for level in allowed_levels {
@@ -130,10 +145,21 @@ async fn initial_migration_enforces_panel_states_command_history_and_notificatio
     .execute(&mut connection)
     .await;
     assert!(invalid_notification_level.is_err());
+
+    let null_notification_id = sqlx::query(
+        "insert into notifications (notification_id, level, message, created_at) values (?, ?, ?, ?)",
+    )
+    .bind(Option::<&str>::None)
+    .bind("info")
+    .bind("null id should fail")
+    .bind("2026-01-01T00:02:00Z")
+    .execute(&mut connection)
+    .await;
+    assert!(null_notification_id.is_err());
 }
 
 #[tokio::test]
-async fn initial_migration_enforces_module_state_json_validity_when_available() {
+async fn initial_migration_enforces_module_state_json_validity() {
     let mut connection = connect_and_migrate().await;
 
     sqlx::query(
@@ -147,23 +173,22 @@ async fn initial_migration_enforces_module_state_json_validity_when_available() 
     .await
     .expect("valid module_state JSON should insert");
 
-    let json_functions_available = sqlx::query_scalar::<_, i64>("select json_valid('{}');")
+    let json_valid_result = sqlx::query_scalar::<_, i64>("select json_valid('{}');")
         .fetch_one(&mut connection)
         .await
-        .is_ok();
+        .expect("sqlite json_valid() must be available for this schema");
+    assert_eq!(json_valid_result, 1_i64);
 
-    if json_functions_available {
-        let invalid_json = sqlx::query(
-            "insert into module_state (module_id, state_key, state_json, updated_at) values (?, ?, ?, ?)",
-        )
-        .bind("module-1")
-        .bind("state-invalid")
-        .bind("{invalid-json}")
-        .bind("2026-01-01T00:01:00Z")
-        .execute(&mut connection)
-        .await;
-        assert!(invalid_json.is_err());
-    }
+    let invalid_json = sqlx::query(
+        "insert into module_state (module_id, state_key, state_json, updated_at) values (?, ?, ?, ?)",
+    )
+    .bind("module-1")
+    .bind("state-invalid")
+    .bind("{invalid-json}")
+    .bind("2026-01-01T00:01:00Z")
+    .execute(&mut connection)
+    .await;
+    assert!(invalid_json.is_err());
 }
 
 async fn connect_and_migrate() -> SqliteConnection {
