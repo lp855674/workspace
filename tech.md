@@ -29,13 +29,15 @@ This workspace provides a Zed-style workbench kernel in Rust. It keeps shell con
 
 ## Runtime Flow
 
-1. `app` boots the Zed-style shell with client-side window decorations and installs the native menu through `gpui`.
+1. `app` boots the Zed-style shell with client-side window decorations, installs the native menu through `gpui`, and uses `gpui_component::TitleBar::title_bar_options()` for titlebar compatibility.
 2. `module::ModuleRuntime` registers built-in modules and validates command/panel contribution conflicts.
 3. `commands`, menu entries, keymaps, and command-palette surfaces carry typed `actions::ActionEnvelope` values.
 4. `workspace::WorkspaceController` is the runtime control point for opening, toggling, focusing, hiding, restoring, and serializing panels.
 5. `dock::DockLayoutState` records which panel instance is attached to each dock and which tab is active.
-6. `app_ui` and `ui` render dock hosts from runtime state rather than fake top bars, fake dock cards, demo notifications, or explanatory welcome placeholders.
-7. `welcome` contributes the initial singleton center panel and command action used to validate the full open/focus/serialize path.
+6. `app_ui` renders `gpui_component::TitleBar` above the workbench body, so drag and window controls are platform hit areas rather than fake buttons.
+7. `ui` renders dock hosts from runtime state and keeps the bottom dock host separate from the status toolbar.
+8. The status toolbar renders contribution items only and does not render debug placeholder strings.
+9. `welcome` contributes the initial singleton center panel and command action used to validate the full open/focus/serialize path.
 
 ## Persistence
 
