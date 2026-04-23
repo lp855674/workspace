@@ -10,3 +10,7 @@ publish = false
 path = "src/workspace.rs"
 
 [dependencies]
+actions = { path = "../actions" }
+command_palette = { path = "../command_palette" }
+dock = { path = "../dock" }
+panel = { path = "../panel" }
