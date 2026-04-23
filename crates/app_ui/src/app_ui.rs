@@ -95,7 +95,9 @@ impl Render for AppFrame {
                 "dock.bottom",
                 "Bottom Dock",
                 bottom_panel,
-                workspace_state.dock_layout.is_visible(DockPlacement::Bottom),
+                workspace_state
+                    .dock_layout
+                    .is_visible(DockPlacement::Bottom),
             ),
         };
         let status = ShellStatusToolbar {
@@ -106,15 +108,7 @@ impl Render for AppFrame {
             .size_full()
             .flex()
             .flex_col()
-            .child(
-                TitleBar::new().child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .text_sm()
-                        .child(self.title),
-                ),
-            )
+            .child(TitleBar::new().child(div().flex().items_center().text_sm().child(self.title)))
             .child(render_shell(sidebar, workspace, status))
     }
 }
