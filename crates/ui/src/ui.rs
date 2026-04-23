@@ -198,21 +198,49 @@ fn render_dock_host(host: ShellDockHost, kind: DockHostKind) -> impl IntoElement
 
 fn render_status_toolbar(status: ShellStatusToolbar) -> impl IntoElement {
     div()
-        .h(px(24.))
+        .h(px(30.))
         .w_full()
-        .px_3()
         .flex()
         .items_center()
-        .gap_3()
-        .bg(rgb(0x0c1116))
+        .justify_between()
+        .bg(rgb(0x111820))
         .border_t_1()
-        .border_color(rgb(0x1b242d))
-        .children(
-            status
-                .items
-                .into_iter()
-                .map(|item| div().text_xs().text_color(rgb(0x8092a2)).child(item.text)),
+        .border_color(rgb(0x25313b))
+        .child(
+            div()
+                .h_full()
+                .flex()
+                .items_center()
+                .px_3()
+                .gap_2()
+                .border_r_1()
+                .border_color(rgb(0x25313b))
+                .child(toolbar_slot("workspace")),
         )
+        .child(
+            div()
+                .h_full()
+                .flex()
+                .flex_1()
+                .items_center()
+                .px_3()
+                .gap_3()
+                .children(status.items.into_iter().map(|item| toolbar_slot(item.text))),
+        )
+        .child(
+            div()
+                .h_full()
+                .flex()
+                .items_center()
+                .px_3()
+                .border_l_1()
+                .border_color(rgb(0x25313b))
+                .child(toolbar_slot("status")),
+        )
+}
+
+fn toolbar_slot(text: impl Into<String>) -> impl IntoElement {
+    div().text_xs().text_color(rgb(0x9cafbf)).child(text.into())
 }
 
 pub fn render_file_tree(
