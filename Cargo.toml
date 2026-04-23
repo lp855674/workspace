@@ -40,3 +40,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 gpui = "0.2.2"
 gpui_macros = { package = "gpui-macros", version = "0.2.2" }
+gpui-component = "0.5.1"

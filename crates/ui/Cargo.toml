@@ -10,3 +10,7 @@ publish = false
 path = "src/ui.rs"
 
 [dependencies]
+gpui.workspace = true
+gpui-component.workspace = true
+notifications = { path = "../notifications" }
+status_bar = { path = "../status_bar" }

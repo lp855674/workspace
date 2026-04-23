@@ -10,5 +10,14 @@ publish = false
 path = "src/app_ui.rs"
 
 [dependencies]
+assets = { path = "../assets" }
+dock = { path = "../dock" }
 gpui.workspace = true
 gpui_macros.workspace = true
+gpui-component.workspace = true
+keymap = { path = "../keymap" }
+notifications = { path = "../notifications" }
+status_bar = { path = "../status_bar" }
+theme = { path = "../theme" }
+ui = { path = "../ui" }
+workspace = { path = "../workspace" }

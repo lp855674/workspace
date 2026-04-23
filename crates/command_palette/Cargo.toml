@@ -10,3 +10,4 @@ publish = false
 path = "src/command_palette.rs"
 
 [dependencies]
+commands = { path = "../commands" }

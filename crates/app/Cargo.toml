@@ -11,3 +11,12 @@ name = "app"
 path = "src/main.rs"
 
 [dependencies]
+app_ui = { path = "../app_ui" }
+commands = { path = "../commands" }
+gpui.workspace = true
+gpui-component.workspace = true
+module = { path = "../module" }
+notifications = { path = "../notifications" }
+status_bar = { path = "../status_bar" }
+welcome = { path = "../welcome" }
+workspace = { path = "../workspace" }
