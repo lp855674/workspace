@@ -9,6 +9,13 @@ pub fn initial_migration_sql() -> &'static str {
     include_str!("../migrations/0001_init.sql")
 }
 
+/// SQL text for the second SQLite migration.
+///
+/// This extends workspace shell persistence with restore-safe panel fields.
+pub fn second_migration_sql() -> &'static str {
+    include_str!("../migrations/0002_workspace_shell_session.sql")
+}
+
 /// Parse SQLite connection options with foreign key enforcement enabled.
 pub fn sqlite_connect_options(database_url: &str) -> Result<SqliteConnectOptions, sqlx::Error> {
     Ok(SqliteConnectOptions::from_str(database_url)?.foreign_keys(true))

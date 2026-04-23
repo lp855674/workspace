@@ -1,4 +1,4 @@
-use db::{connect_sqlite, connect_sqlite_pool, initial_migration_sql};
+use db::{connect_sqlite, connect_sqlite_pool, initial_migration_sql, second_migration_sql};
 use sqlx::{Row, SqliteConnection};
 use std::collections::BTreeSet;
 
@@ -192,6 +192,81 @@ async fn initial_migration_enforces_module_state_json_validity() {
 }
 
 #[tokio::test]
+async fn second_migration_tracks_schema_version_and_panel_instance_keys() {
+    let mut connection = connect_and_migrate_all().await;
+
+    sqlx::query(
+        "insert into workspace_sessions (session_id, schema_version, created_at) values (?, ?, ?)",
+    )
+    .bind("session-2")
+    .bind(2_i64)
+    .bind("2026-04-23T00:00:00Z")
+    .execute(&mut connection)
+    .await
+    .expect("workspace session with schema version should insert");
+
+    sqlx::query(
+        "insert into panel_states (session_id, panel_id, panel_instance_key, dock, visible, focused, panel_state_json) values (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind("session-2")
+    .bind("welcome.panel")
+    .bind("welcome.panel")
+    .bind("Center")
+    .bind(1_i64)
+    .bind(1_i64)
+    .bind("{\"mode\":\"default\"}")
+    .execute(&mut connection)
+    .await
+    .expect("panel state with instance key should insert");
+
+    let row = sqlx::query(
+        "select schema_version, panel_instance_key, focused, panel_state_json \
+         from workspace_sessions \
+         join panel_states using (session_id) \
+         where session_id = ?",
+    )
+    .bind("session-2")
+    .fetch_one(&mut connection)
+    .await
+    .expect("persisted workspace shell session should be readable");
+
+    assert_eq!(row.get::<i64, _>("schema_version"), 2_i64);
+    assert_eq!(row.get::<String, _>("panel_instance_key"), "welcome.panel");
+    assert_eq!(row.get::<i64, _>("focused"), 1_i64);
+    assert_eq!(
+        row.get::<String, _>("panel_state_json"),
+        "{\"mode\":\"default\"}"
+    );
+}
+
+#[tokio::test]
+async fn second_migration_rejects_invalid_panel_state_json() {
+    let mut connection = connect_and_migrate_all().await;
+
+    sqlx::query("insert into workspace_sessions (session_id, created_at) values (?, ?)")
+        .bind("session-json")
+        .bind("2026-04-23T00:00:00Z")
+        .execute(&mut connection)
+        .await
+        .expect("workspace session should insert");
+
+    let invalid_json = sqlx::query(
+        "insert into panel_states (session_id, panel_id, panel_instance_key, dock, visible, focused, panel_state_json) values (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind("session-json")
+    .bind("welcome.panel")
+    .bind("welcome.panel")
+    .bind("Center")
+    .bind(1_i64)
+    .bind(0_i64)
+    .bind("{invalid-json}")
+    .execute(&mut connection)
+    .await;
+
+    assert!(invalid_json.is_err());
+}
+
+#[tokio::test]
 async fn sqlite_helpers_enable_foreign_keys() {
     let mut connection = connect_sqlite("sqlite::memory:")
         .await
@@ -247,6 +322,15 @@ async fn connect_and_migrate() -> SqliteConnection {
         .execute(&mut connection)
         .await
         .expect("initial migration should execute");
+    connection
+}
+
+async fn connect_and_migrate_all() -> SqliteConnection {
+    let mut connection = connect_and_migrate().await;
+    sqlx::raw_sql(second_migration_sql())
+        .execute(&mut connection)
+        .await
+        .expect("second migration should execute");
     connection
 }
 
