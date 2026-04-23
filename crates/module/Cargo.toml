@@ -11,3 +11,7 @@ path = "src/module.rs"
 
 [dependencies]
 commands = { path = "../commands" }
+panel = { path = "../panel" }
+
+[dev-dependencies]
+actions = { path = "../actions" }

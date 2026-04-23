@@ -10,3 +10,11 @@ publish = false
 path = "src/welcome.rs"
 
 [dependencies]
+actions = { path = "../actions" }
+commands = { path = "../commands" }
+module = { path = "../module" }
+panel = { path = "../panel" }
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

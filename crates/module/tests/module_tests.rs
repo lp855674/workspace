@@ -1,13 +1,31 @@
-use commands::CommandDescriptorError;
+use actions::{ActionEnvelope, PanelAction};
+use commands::{CommandDescriptor, CommandDescriptorError};
 use module::{
-    CommandContribution, FeatureModule, ModuleIdError, ModuleRuntime, RegisterModuleError,
-    SimpleModule,
+    CommandContribution, FeatureModule, ModuleIdError, ModuleRuntime, PanelContribution,
+    RegisterModuleError, SimpleModule,
 };
+use panel::{DockPlacement, PanelDescriptor};
 use std::cell::Cell;
 use std::rc::Rc;
 
 fn command(command_id: &str) -> CommandContribution {
     CommandContribution::try_new(command_id).unwrap()
+}
+
+fn command_with_panel_action(command_id: &str, panel_type_id: &str) -> CommandContribution {
+    let descriptor = CommandDescriptor::try_new_with_action(
+        command_id,
+        "Open Panel",
+        ActionEnvelope::panel(PanelAction::Open {
+            panel_type_id: panel_type_id.to_owned(),
+        }),
+    )
+    .unwrap();
+    CommandContribution::new(descriptor)
+}
+
+fn panel(panel_id: &str) -> PanelContribution {
+    PanelContribution::new(PanelDescriptor::new(panel_id, "Panel", DockPlacement::Left))
 }
 
 struct TestModule {
@@ -182,6 +200,25 @@ fn module_runtime_rejects_duplicate_command_ids_within_module() {
 }
 
 #[test]
+fn module_runtime_retains_action_carrying_command_descriptors() {
+    let module = SimpleModule::with_command(
+        "welcome",
+        command_with_panel_action("welcome.open", "welcome.panel"),
+    );
+
+    let mut runtime = ModuleRuntime::default();
+    assert!(runtime.register(Box::new(module)).is_ok());
+
+    let registered = runtime
+        .retained_modules()
+        .first()
+        .expect("registered module should be retained");
+    assert_eq!(registered.command_ids()[0].as_str(), "welcome.open");
+    assert_eq!(registered.commands()[0].id().as_str(), "welcome.open");
+    assert_eq!(registered.commands()[0].action().kind(), "panel");
+}
+
+#[test]
 fn module_runtime_rejects_duplicate_module_ids() {
     let first = SimpleModule::with_command("welcome", command("command.open"));
     let second = SimpleModule::with_command("welcome", command("command.close"));
@@ -208,7 +245,8 @@ fn module_runtime_register_uses_single_snapshot_for_stateful_module() {
     );
     assert!(runtime.register(Box::new(stateful)).is_ok());
 
-    let duplicate_of_first_snapshot = SimpleModule::with_command("followup", command("command.unique"));
+    let duplicate_of_first_snapshot =
+        SimpleModule::with_command("followup", command("command.unique"));
     let result = runtime.register(Box::new(duplicate_of_first_snapshot));
     assert!(matches!(
         result,
@@ -358,5 +396,26 @@ fn command_contribution_rejects_whitespace_in_command_id() {
     assert!(matches!(
         result,
         Err(CommandDescriptorError::IdContainsWhitespace)
+    ));
+}
+
+#[test]
+fn module_runtime_rejects_duplicate_panel_ids_across_modules() {
+    let first = SimpleModule::with_command_and_panel(
+        "welcome",
+        command("command.open"),
+        panel("panel.shared"),
+    );
+    let second = SimpleModule::with_command_and_panel(
+        "inspector",
+        command("command.close"),
+        panel("panel.shared"),
+    );
+
+    let mut runtime = ModuleRuntime::default();
+    assert!(runtime.register(Box::new(first)).is_ok());
+    assert!(matches!(
+        runtime.register(Box::new(second)),
+        Err(RegisterModuleError::DuplicatePanelId(_))
     ));
 }
