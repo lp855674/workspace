@@ -20,6 +20,22 @@ pub struct ShellDockHost {
     pub visible: bool,
 }
 
+impl ShellDockHost {
+    pub const fn new(
+        id: &'static str,
+        title: &'static str,
+        active_panel: Option<String>,
+        visible: bool,
+    ) -> Self {
+        Self {
+            id,
+            title,
+            active_panel,
+            visible,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShellWorkspace {
     pub center: ShellDockHost,
@@ -28,16 +44,14 @@ pub struct ShellWorkspace {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ShellStatus {
-    pub left_text: String,
-    pub right_text: String,
+pub struct ShellStatusToolbar {
     pub items: Vec<StatusBarItem>,
 }
 
 pub fn render_shell(
     sidebar: ShellSidebar,
     workspace: ShellWorkspace,
-    status: ShellStatus,
+    status: ShellStatusToolbar,
 ) -> impl IntoElement {
     div()
         .size_full()
@@ -51,9 +65,12 @@ pub fn render_shell(
                 .flex_1()
                 .min_h_0()
                 .child(render_sidebar(sidebar))
-                .child(render_workspace(workspace)),
+                .child(render_workspace_body(&workspace)),
         )
-        .child(render_status_bar(status))
+        .when(workspace.bottom.visible, |this| {
+            this.child(render_dock_host(workspace.bottom, DockHostKind::Bottom))
+        })
+        .child(render_status_toolbar(status))
 }
 
 fn render_sidebar(sidebar: ShellSidebar) -> impl IntoElement {
@@ -101,7 +118,7 @@ fn render_sidebar(sidebar: ShellSidebar) -> impl IntoElement {
         )
 }
 
-fn render_workspace(workspace: ShellWorkspace) -> impl IntoElement {
+fn render_workspace_body(workspace: &ShellWorkspace) -> impl IntoElement {
     div().flex_1().min_w_0().min_h_0().flex().flex_col().child(
         div()
             .flex()
@@ -114,13 +131,16 @@ fn render_workspace(workspace: ShellWorkspace) -> impl IntoElement {
                     .min_h_0()
                     .flex()
                     .flex_col()
-                    .child(render_dock_host(workspace.center, DockHostKind::Center))
-                    .when(workspace.bottom.visible, |this| {
-                        this.child(render_dock_host(workspace.bottom, DockHostKind::Bottom))
-                    }),
+                    .child(render_dock_host(
+                        workspace.center.clone(),
+                        DockHostKind::Center,
+                    )),
             )
             .when(workspace.right.visible, |this| {
-                this.child(render_dock_host(workspace.right, DockHostKind::Right))
+                this.child(render_dock_host(
+                    workspace.right.clone(),
+                    DockHostKind::Right,
+                ))
             }),
     )
 }
@@ -176,53 +196,22 @@ fn render_dock_host(host: ShellDockHost, kind: DockHostKind) -> impl IntoElement
     container
 }
 
-fn render_status_bar(status: ShellStatus) -> impl IntoElement {
+fn render_status_toolbar(status: ShellStatusToolbar) -> impl IntoElement {
     div()
         .h(px(24.))
         .w_full()
         .px_3()
         .flex()
         .items_center()
-        .justify_between()
+        .gap_3()
         .bg(rgb(0x0c1116))
         .border_t_1()
         .border_color(rgb(0x1b242d))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_3()
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(0x9ab0c2))
-                        .child(status.left_text),
-                )
-                .children(status.items.iter().take(2).map(|item| {
-                    div()
-                        .text_xs()
-                        .text_color(rgb(0x8092a2))
-                        .child(item.text.clone())
-                })),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_3()
-                .children(
-                    status
-                        .items
-                        .into_iter()
-                        .skip(2)
-                        .map(|item| div().text_xs().text_color(rgb(0x8092a2)).child(item.text)),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(0x9ab0c2))
-                        .child(status.right_text),
-                ),
+        .children(
+            status
+                .items
+                .into_iter()
+                .map(|item| div().text_xs().text_color(rgb(0x8092a2)).child(item.text)),
         )
 }
 

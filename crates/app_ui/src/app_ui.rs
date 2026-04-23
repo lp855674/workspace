@@ -9,7 +9,7 @@ use keymap::KeyBinding;
 use status_bar::StatusBarItem;
 use theme::ThemeDefinition;
 use ui::{
-    ShellDockHost, ShellSidebar, ShellStatus, ShellWorkspace, render_file_tree, render_shell,
+    ShellDockHost, ShellSidebar, ShellStatusToolbar, ShellWorkspace, render_file_tree, render_shell,
 };
 use workspace::WorkspaceController;
 
@@ -59,7 +59,6 @@ impl Render for AppFrame {
             .focused_panel
             .as_deref()
             .unwrap_or("welcome.panel");
-        let recent_commands = workspace_state.recent_commands.len();
         let center_panel = workspace_state
             .dock_layout
             .active_panel(DockPlacement::Center)
@@ -85,30 +84,21 @@ impl Render for AppFrame {
             .into_any_element(),
         };
         let workspace = ShellWorkspace {
-            center: ShellDockHost {
-                id: "dock.center",
-                title: "Center",
-                active_panel: center_panel,
-                visible: true,
-            },
-            right: ShellDockHost {
-                id: "dock.right",
-                title: "Right Dock",
-                active_panel: right_panel,
-                visible: workspace_state.dock_layout.is_visible(DockPlacement::Right),
-            },
-            bottom: ShellDockHost {
-                id: "dock.bottom",
-                title: "Bottom Dock",
-                active_panel: bottom_panel,
-                visible: workspace_state
-                    .dock_layout
-                    .is_visible(DockPlacement::Bottom),
-            },
+            center: ShellDockHost::new("dock.center", "Center", center_panel, true),
+            right: ShellDockHost::new(
+                "dock.right",
+                "Right Dock",
+                right_panel,
+                workspace_state.dock_layout.is_visible(DockPlacement::Right),
+            ),
+            bottom: ShellDockHost::new(
+                "dock.bottom",
+                "Bottom Dock",
+                bottom_panel,
+                workspace_state.dock_layout.is_visible(DockPlacement::Bottom),
+            ),
         };
-        let status = ShellStatus {
-            left_text: format!("focused: {focused_panel}"),
-            right_text: format!("recent commands: {recent_commands}"),
+        let status = ShellStatusToolbar {
             items: self.status_items.clone(),
         };
 
