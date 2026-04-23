@@ -37,14 +37,16 @@ async fn initial_migration_enforces_panel_states_command_history_and_notificatio
         .await
         .expect("workspace_sessions insert should work");
 
-    sqlx::query("insert into panel_states (session_id, panel_id, dock, visible) values (?, ?, ?, ?)")
-        .bind("session-1")
-        .bind("panel-1")
-        .bind("Left")
-        .bind(1_i64)
-        .execute(&mut connection)
-        .await
-        .expect("first panel_states insert should work");
+    sqlx::query(
+        "insert into panel_states (session_id, panel_id, dock, visible) values (?, ?, ?, ?)",
+    )
+    .bind("session-1")
+    .bind("panel-1")
+    .bind("Left")
+    .bind(1_i64)
+    .execute(&mut connection)
+    .await
+    .expect("first panel_states insert should work");
 
     let duplicate_panel_state = sqlx::query(
         "insert into panel_states (session_id, panel_id, dock, visible) values (?, ?, ?, ?)",
@@ -113,11 +115,12 @@ async fn initial_migration_enforces_panel_states_command_history_and_notificatio
             .await;
     assert!(null_workspace_session_id.is_err());
 
-    let null_command_id = sqlx::query("insert into command_history (command_id, created_at) values (?, ?)")
-        .bind(Option::<&str>::None)
-        .bind("2026-01-01T00:02:00Z")
-        .execute(&mut connection)
-        .await;
+    let null_command_id =
+        sqlx::query("insert into command_history (command_id, created_at) values (?, ?)")
+            .bind(Option::<&str>::None)
+            .bind("2026-01-01T00:02:00Z")
+            .execute(&mut connection)
+            .await;
     assert!(null_command_id.is_err());
 
     // Keep this list in sync with the schema's explicit closed set.

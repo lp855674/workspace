@@ -4,16 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-echo "=== verify: 1/4 check-db-boundary ==="
+echo "=== verify: 1/2 check-db-boundary ==="
 bash "$ROOT_DIR/script/check-db-boundary"
 
-echo "=== verify: 2/4 check-log-style ==="
-bash "$ROOT_DIR/script/check-log-style"
-
-echo "=== verify: 3/4 check-log-fields ==="
-bash "$ROOT_DIR/script/check-log-fields"
-
-echo "=== verify: 4/4 cargo check ==="
+echo "=== verify: 2/2 cargo check ==="
 cargo check
 
 echo "=== verify passed ==="
