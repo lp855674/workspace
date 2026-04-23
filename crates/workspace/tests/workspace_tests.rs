@@ -7,6 +7,11 @@ use workspace::{
 #[test]
 fn workspace_state_remembers_focused_panel() {
     let mut state = WorkspaceState::default();
+    state.register_panel(PanelDescriptor::new(
+        "welcome.panel",
+        "Welcome",
+        DockPlacement::Center,
+    ));
     state.focus_panel("welcome.panel");
     assert_eq!(state.focused_panel.as_deref(), Some("welcome.panel"));
 }
@@ -63,6 +68,11 @@ fn workspace_controller_can_toggle_command_palette() {
 #[test]
 fn workspace_controller_can_be_built_from_existing_state() {
     let mut state = WorkspaceState::default();
+    state.register_panel(PanelDescriptor::new(
+        "welcome.panel",
+        "Welcome",
+        DockPlacement::Center,
+    ));
     state.focus_panel("welcome.panel");
 
     let controller = WorkspaceController::from_state("session-2", state);

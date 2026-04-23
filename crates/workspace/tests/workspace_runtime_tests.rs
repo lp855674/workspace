@@ -110,3 +110,60 @@ fn restored_non_default_placement_survives_later_serialization() {
             .is_visible(DockPlacement::Right)
     );
 }
+
+#[test]
+fn move_panel_action_moves_singleton_to_target_dock() {
+    let mut workspace = WorkspaceController::new("session-1");
+    workspace.register_panel(PanelDescriptor::singleton(
+        PanelTypeId::try_new("welcome.panel").expect("panel type id should parse"),
+        "Welcome",
+        DockPlacement::Center,
+    ));
+
+    workspace.dispatch(ActionEnvelope::panel(PanelAction::Open {
+        panel_type_id: "welcome.panel".to_owned(),
+    }));
+    workspace.dispatch(ActionEnvelope::panel(PanelAction::Move {
+        panel_type_id: "welcome.panel".to_owned(),
+        dock: "right".to_owned(),
+    }));
+
+    let runtime = workspace
+        .state()
+        .live_panels
+        .get("welcome.panel")
+        .expect("moved panel should stay live");
+
+    assert_eq!(runtime.placement, DockPlacement::Right);
+    assert!(
+        !workspace
+            .state()
+            .dock_layout
+            .is_visible(DockPlacement::Center)
+    );
+    assert!(
+        workspace
+            .state()
+            .dock_layout
+            .is_visible(DockPlacement::Right)
+    );
+    assert_eq!(
+        workspace
+            .state()
+            .dock_layout
+            .active_panel(DockPlacement::Right),
+        Some(&runtime.instance_key)
+    );
+}
+
+#[test]
+fn unregistered_panel_show_and_focus_do_not_create_fake_runtime_state() {
+    let mut workspace = WorkspaceController::new("session-1");
+
+    workspace.show_panel("missing.panel");
+    workspace.focus_panel("missing.panel");
+
+    assert!(workspace.state().visible_panels().is_empty());
+    assert!(workspace.state().focused_panel.is_none());
+    assert!(workspace.state().live_panels.is_empty());
+}

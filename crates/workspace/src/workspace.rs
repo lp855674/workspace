@@ -92,12 +92,14 @@ impl WorkspaceState {
             ActionEnvelope::Panel(PanelActionEnvelope {
                 action,
                 panel_type_id,
+                ..
             }) if action == "open" => {
                 self.open_panel(panel_type_id);
             }
             ActionEnvelope::Panel(PanelActionEnvelope {
                 action,
                 panel_type_id,
+                ..
             }) if action == "toggle" => {
                 if self.is_panel_visible(panel_type_id) {
                     self.hide_panel(panel_type_id);
@@ -108,6 +110,7 @@ impl WorkspaceState {
             ActionEnvelope::Panel(PanelActionEnvelope {
                 action,
                 panel_type_id,
+                ..
             }) if action == "focus" => {
                 if self.is_panel_visible(panel_type_id) {
                     self.focused_panel = Some(panel_type_id.to_owned());
@@ -118,8 +121,18 @@ impl WorkspaceState {
             ActionEnvelope::Panel(PanelActionEnvelope {
                 action,
                 panel_type_id,
+                ..
             }) if action == "close" => {
                 self.hide_panel(panel_type_id);
+            }
+            ActionEnvelope::Panel(PanelActionEnvelope {
+                action,
+                panel_type_id,
+                dock: Some(dock),
+            }) if action == "move" => {
+                if let Some(placement) = parse_dock_placement(dock) {
+                    self.move_panel(panel_type_id, placement);
+                }
             }
             _ => {}
         }
@@ -146,21 +159,24 @@ impl WorkspaceState {
                 visible: false,
             });
 
+        let previous_placement = runtime.placement;
+        let was_visible = runtime.visible;
         runtime.placement = placement;
         runtime.visible = true;
         let instance_key = runtime.instance_key.clone();
         self.add_visible_panel(panel_type_id, placement);
-        self.dock_layout.show_panel(placement, instance_key);
+        if was_visible && previous_placement != placement {
+            self.dock_layout.move_panel(&instance_key, placement);
+        } else {
+            self.dock_layout.show_panel(placement, instance_key);
+        }
         self.focused_panel = Some(panel_type_id.to_owned());
     }
 
     pub fn show_panel(&mut self, panel_id: &str) {
         if self.registered_panels.contains_key(panel_id) {
             self.open_panel(panel_id);
-            return;
         }
-
-        self.show_legacy_panel(panel_id, DockPlacement::Center);
     }
 
     pub fn hide_panel(&mut self, panel_type_id: &str) {
@@ -202,12 +218,13 @@ impl WorkspaceState {
             self.visible_panels.push(panel_id.to_owned());
         }
 
-        if self
+        if let Some(existing) = self
             .dock_state
             .visible_panels
             .iter()
-            .any(|panel| panel.panel_id == panel_id)
+            .position(|panel| panel.panel_id == panel_id)
         {
+            self.dock_state.visible_panels[existing].placement = placement;
             return;
         }
 
@@ -217,13 +234,15 @@ impl WorkspaceState {
         });
     }
 
-    fn show_legacy_panel(&mut self, panel_id: &str, placement: DockPlacement) {
-        self.add_visible_panel(panel_id, placement);
+    pub fn focus_panel(&mut self, panel_id: &str) {
+        if self.registered_panels.contains_key(panel_id) {
+            self.show_panel(panel_id);
+            self.focused_panel = Some(panel_id.to_owned());
+        }
     }
 
-    pub fn focus_panel(&mut self, panel_id: &str) {
-        self.show_panel(panel_id);
-        self.focused_panel = Some(panel_id.to_owned());
+    pub fn move_panel(&mut self, panel_type_id: &str, placement: DockPlacement) {
+        self.open_panel_at(panel_type_id, Some(placement));
     }
 
     pub fn record_command(&mut self, command_id: &str) {
@@ -258,7 +277,7 @@ impl WorkspaceState {
                 .iter()
                 .map(|(panel_type_id, runtime)| SerializedPanelState {
                     panel_type_id: panel_type_id.clone(),
-                    panel_instance_key: panel_type_id.clone(),
+                    panel_instance_key: runtime.instance_key.as_str().to_owned(),
                     placement: runtime.placement,
                     visible: runtime.visible,
                     focused: self.focused_panel.as_deref() == Some(panel_type_id.as_str()),
@@ -320,6 +339,16 @@ impl WorkspaceState {
     }
 }
 
+fn parse_dock_placement(value: &str) -> Option<DockPlacement> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "left" => Some(DockPlacement::Left),
+        "center" => Some(DockPlacement::Center),
+        "bottom" => Some(DockPlacement::Bottom),
+        "right" => Some(DockPlacement::Right),
+        _ => None,
+    }
+}
+
 pub trait WorkspaceRestoreSource {
     fn restore_into(&self, state: &mut WorkspaceState);
 }
@@ -367,6 +396,10 @@ impl WorkspaceController {
 
     pub fn focus_panel(&mut self, panel_id: &str) {
         self.state.focus_panel(panel_id);
+    }
+
+    pub fn move_panel(&mut self, panel_id: &str, placement: DockPlacement) {
+        self.state.move_panel(panel_id, placement);
     }
 
     pub fn record_command(&mut self, command_id: &str) {

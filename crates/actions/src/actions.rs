@@ -35,12 +35,15 @@ pub enum PanelAction {
     Toggle { panel_type_id: String },
     Focus { panel_type_id: String },
     Close { panel_type_id: String },
+    Move { panel_type_id: String, dock: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PanelActionEnvelope {
     pub action: String,
     pub panel_type_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dock: Option<String>,
 }
 
 impl From<PanelAction> for PanelActionEnvelope {
@@ -49,18 +52,30 @@ impl From<PanelAction> for PanelActionEnvelope {
             PanelAction::Open { panel_type_id } => Self {
                 action: "open".to_owned(),
                 panel_type_id,
+                dock: None,
             },
             PanelAction::Toggle { panel_type_id } => Self {
                 action: "toggle".to_owned(),
                 panel_type_id,
+                dock: None,
             },
             PanelAction::Focus { panel_type_id } => Self {
                 action: "focus".to_owned(),
                 panel_type_id,
+                dock: None,
             },
             PanelAction::Close { panel_type_id } => Self {
                 action: "close".to_owned(),
                 panel_type_id,
+                dock: None,
+            },
+            PanelAction::Move {
+                panel_type_id,
+                dock,
+            } => Self {
+                action: "move".to_owned(),
+                panel_type_id,
+                dock: Some(dock),
             },
         }
     }
