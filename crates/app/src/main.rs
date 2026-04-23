@@ -1,10 +1,10 @@
 use app_ui::AppFrame;
 use commands::CommandRegistry;
 use gpui::{
-    Action, App, AppContext, Application, Menu, MenuItem, OsAction, TitlebarOptions, WindowBounds,
+    Action, App, AppContext, Application, Menu, MenuItem, OsAction, WindowBounds,
     WindowDecorations, WindowOptions, actions, px, size,
 };
-use gpui_component::Root;
+use gpui_component::{Root, TitleBar};
 use module::ModuleRuntime;
 use welcome::WelcomeModule;
 use workspace::WorkspaceController;
@@ -155,13 +155,10 @@ fn main() {
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(window_bounds),
-                titlebar: Some(TitlebarOptions {
-                    title: None,
-                    appears_transparent: true,
-                    traffic_light_position: None,
-                }),
+                titlebar: Some(TitleBar::title_bar_options()),
                 app_id: Some("com.workspace.zed_workbench_kernel".to_owned()),
                 window_decorations: Some(WindowDecorations::Client),
+                is_movable: true,
                 focus: true,
                 ..Default::default()
             },
