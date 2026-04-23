@@ -1,7 +1,10 @@
 use assets::{load_default_theme, load_windows_keymap};
 use dock::DockPlacement;
-use gpui::{AppContext, Context, Entity, IntoElement, Render, Window};
-use gpui_component::tree::{TreeItem, TreeState};
+use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div};
+use gpui_component::{
+    TitleBar,
+    tree::{TreeItem, TreeState},
+};
 use keymap::KeyBinding;
 use status_bar::StatusBarItem;
 use theme::ThemeDefinition;
@@ -37,6 +40,10 @@ impl AppFrame {
 
     pub fn title_text(&self) -> &'static str {
         self.title
+    }
+
+    pub fn status_toolbar_text(&self) -> &'static str {
+        ""
     }
 }
 
@@ -105,6 +112,19 @@ impl Render for AppFrame {
             items: self.status_items.clone(),
         };
 
-        render_shell(sidebar, workspace, status)
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                TitleBar::new().child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .text_sm()
+                        .child(self.title),
+                ),
+            )
+            .child(render_shell(sidebar, workspace, status))
     }
 }

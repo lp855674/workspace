@@ -23,3 +23,10 @@ fn app_frame_starts_without_fake_shell_status_items() {
 
     assert!(frame.status_items.is_empty());
 }
+
+#[test]
+fn app_frame_starts_with_empty_status_toolbar_text() {
+    let frame = AppFrame::new(WorkspaceController::new("session-1"));
+
+    assert_eq!(frame.status_toolbar_text(), "");
+}
