@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 
+use actions::ActionEnvelope;
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CommandId(String);
 
@@ -81,6 +83,7 @@ impl Error for CommandDescriptorError {}
 pub struct CommandDescriptor {
     id: CommandId,
     title: CommandTitle,
+    action: ActionEnvelope,
 }
 
 impl CommandDescriptor {
@@ -88,9 +91,18 @@ impl CommandDescriptor {
         id: impl Into<String>,
         title: impl Into<String>,
     ) -> Result<Self, CommandDescriptorError> {
+        Self::try_new_with_action(id, title, ActionEnvelope::noop())
+    }
+
+    pub fn try_new_with_action(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        action: ActionEnvelope,
+    ) -> Result<Self, CommandDescriptorError> {
         Ok(Self {
             id: CommandId::try_new(id)?,
             title: CommandTitle::try_new(title)?,
+            action,
         })
     }
 
@@ -100,6 +112,10 @@ impl CommandDescriptor {
 
     pub fn title(&self) -> &CommandTitle {
         &self.title
+    }
+
+    pub fn action(&self) -> &ActionEnvelope {
+        &self.action
     }
 }
 
@@ -133,5 +149,17 @@ impl CommandRegistry {
 
         self.commands.insert(command.id.clone(), command);
         Ok(())
+    }
+
+    pub fn len(&self) -> usize {
+        self.commands.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.commands.is_empty()
+    }
+
+    pub fn commands(&self) -> impl Iterator<Item = &CommandDescriptor> {
+        self.commands.values()
     }
 }

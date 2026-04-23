@@ -10,3 +10,7 @@ publish = false
 path = "src/actions.rs"
 
 [dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
