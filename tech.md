@@ -36,9 +36,10 @@ This workspace provides a Zed-style workbench kernel in Rust. It keeps shell con
 4. `workspace::WorkspaceController` is the runtime control point for opening, toggling, focusing, hiding, restoring, and serializing panels.
 5. `dock::DockLayoutState` records which panel instance is attached to each dock and which tab is active.
 6. `app_ui` renders `gpui_component::TitleBar` above the workbench body, so drag and window controls are platform hit areas rather than fake buttons.
-7. `ui` renders dock hosts from runtime state and keeps the bottom dock host separate from the status toolbar.
-8. The status toolbar renders contribution items only and does not render debug placeholder strings.
-9. `welcome` contributes the initial singleton center panel and command action used to validate the full open/focus/serialize path.
+7. `ui` renders dock hosts from runtime state, keeps the bottom dock host separate from the status toolbar, and renders terminal content as a fixed viewport instead of adding a second transcript scroll container.
+8. `app_ui` maps wheel and page-navigation input into terminal viewport operations and preserves per-tab terminal viewport state.
+9. The status toolbar renders contribution items only and does not render debug placeholder strings.
+10. `welcome` contributes the initial singleton center panel and command action used to validate the full open/focus/serialize path.
 
 ## Persistence
 

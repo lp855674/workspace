@@ -101,6 +101,11 @@ pub struct ShellTerminalSession {
     pub cursor_hidden: bool,
     pub focused: bool,
     pub scrollback: usize,
+    pub viewport_top: usize,
+    pub viewport_height: usize,
+    pub total_lines: usize,
+    pub can_scroll_up: bool,
+    pub can_scroll_down: bool,
     pub away_from_bottom: bool,
     pub visible_cells: Vec<Vec<ShellTerminalCell>>,
     pub visible_lines: Vec<String>,
@@ -514,7 +519,6 @@ fn render_terminal_session(terminal: ShellTerminalSession, theme: ShellTheme) ->
     div().size_full().bg(rgb(theme.dock_background)).child(
         div()
             .size_full()
-            .overflow_y_scrollbar()
             .font_family("Consolas")
             .text_xs()
             .line_height(px(18.))
@@ -732,16 +736,16 @@ fn render_terminal_header_actions(
         .items_center()
         .gap_1()
         .when_some(
-            terminal.filter(|terminal| terminal.away_from_bottom),
+            terminal.filter(|terminal| terminal.away_from_bottom && terminal.can_scroll_down),
             |this, terminal| {
                 this.child(
                     div()
-                        .h(px(22.))
+                        .h(px(28.))
                         .px_2()
                         .flex()
                         .items_center()
                         .gap_1()
-                        .rounded(px(4.))
+                        .rounded(px(5.))
                         .border_1()
                         .border_color(rgb(theme.border))
                         .bg(rgb(theme.status_bar_button_active))
@@ -902,13 +906,16 @@ fn header_button(
 ) -> impl IntoElement {
     div()
         .id(id)
-        .h(px(22.))
-        .w(px(22.))
+        .h(px(28.))
+        .w(px(28.))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(4.))
-        .text_color(rgb(theme.status_bar_foreground))
+        .rounded(px(5.))
+        .border_1()
+        .border_color(rgb(theme.border))
+        .bg(rgb(theme.status_bar_button))
+        .text_color(rgb(theme.status_bar_active))
         .hover(move |style| {
             style
                 .bg(rgb(theme.status_bar_button_hover))
@@ -919,7 +926,7 @@ fn header_button(
         .on_click(move |_, window, cx| {
             on_action(&action, window, cx);
         })
-        .child(Icon::new(icon).xsmall())
+        .child(Icon::new(icon).small())
 }
 
 fn toolbar_button(

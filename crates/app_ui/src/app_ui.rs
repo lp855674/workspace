@@ -27,7 +27,7 @@ struct TerminalTabRuntime {
     id: String,
     label: String,
     session: TerminalSession,
-    viewport_scrollback: usize,
+    viewport_top: usize,
 }
 
 pub struct AppFrame {
@@ -119,8 +119,13 @@ impl Render for AppFrame {
                     .terminal_focus_handle
                     .as_ref()
                     .is_some_and(|focus_handle| focus_handle.is_focused(window)),
-                scrollback: tab.viewport_scrollback,
-                away_from_bottom: tab.viewport_scrollback > 0,
+                scrollback: snapshot.scrollback,
+                viewport_top: snapshot.viewport_top,
+                viewport_height: snapshot.viewport_height,
+                total_lines: snapshot.total_lines,
+                can_scroll_up: snapshot.can_scroll_up,
+                can_scroll_down: snapshot.can_scroll_down,
+                away_from_bottom: snapshot.can_scroll_down,
                 visible_cells: snapshot
                     .visible_cells
                     .into_iter()
@@ -345,8 +350,12 @@ impl AppFrame {
             self.upsert_status_item("local-shell", "Open a local shell first".to_owned());
             return;
         };
-        tab.viewport_scrollback = 0;
-        tab.session.set_scrollback(0);
+        tab.viewport_top = next_viewport_top_before_input(
+            tab.viewport_top,
+            tab.session.total_lines(),
+            tab.session.viewport_height(),
+        );
+        tab.session.set_viewport_top(tab.viewport_top);
         let Some(bytes) = key_event_to_bytes_with_mode(event, tab.session.application_cursor())
         else {
             return;
@@ -377,7 +386,13 @@ impl AppFrame {
         let cols = 120;
         for tab in &mut self.terminal_tabs {
             let _result = tab.session.resize(rows, cols);
-            tab.session.set_scrollback(tab.viewport_scrollback);
+            let viewport_height = tab.session.viewport_height();
+            tab.viewport_top = clamp_terminal_viewport_top(
+                tab.viewport_top,
+                tab.session.total_lines(),
+                viewport_height,
+            );
+            tab.session.set_viewport_top(tab.viewport_top);
         }
     }
 
@@ -414,9 +429,15 @@ impl AppFrame {
                     id: id.clone(),
                     label,
                     session,
-                    viewport_scrollback: 0,
+                    viewport_top: 0,
                 });
                 self.active_terminal_id = Some(id);
+                let visible_rows = self.visible_terminal_rows();
+                if let Some(tab) = self.active_terminal_mut() {
+                    tab.viewport_top =
+                        live_bottom_viewport_top(tab.session.total_lines(), visible_rows);
+                    tab.session.set_viewport_top(tab.viewport_top);
+                }
                 self.start_terminal_poll(cx);
             }
             Err(message) => {
@@ -451,7 +472,13 @@ impl AppFrame {
         if exists {
             self.active_terminal_id = Some(tab_id.to_owned());
             if let Some(tab) = self.active_terminal_mut() {
-                tab.session.set_scrollback(tab.viewport_scrollback);
+                let viewport_height = tab.session.viewport_height();
+                tab.viewport_top = clamp_terminal_viewport_top(
+                    tab.viewport_top,
+                    tab.session.total_lines(),
+                    viewport_height,
+                );
+                tab.session.set_viewport_top(tab.viewport_top);
             }
             true
         } else {
@@ -494,23 +521,58 @@ impl AppFrame {
     }
 
     fn scroll_active_terminal(&mut self, lines: i32) {
-        let visible_rows = self.visible_terminal_rows();
         let Some(tab) = self.active_terminal_mut() else {
             return;
         };
+        tab.viewport_top = scroll_delta_to_viewport_top(
+            tab.viewport_top,
+            tab.session.total_lines(),
+            tab.session.viewport_height(),
+            lines,
+        );
+        tab.session.set_viewport_top(tab.viewport_top);
+    }
+}
 
-        if lines == i32::MIN {
-            tab.viewport_scrollback = 0;
-            tab.session.set_scrollback(0);
-            return;
-        }
+fn live_bottom_viewport_top(total_lines: usize, viewport_height: usize) -> usize {
+    total_lines.saturating_sub(viewport_height)
+}
 
-        let current = tab.viewport_scrollback as i32;
-        let next = (current + lines).max(0) as usize;
-        let max_scrollback = tab.session.max_safe_scrollback().min(visible_rows);
-        let clamped = next.min(max_scrollback);
-        tab.viewport_scrollback = clamped;
-        tab.session.set_scrollback(clamped);
+fn clamp_terminal_viewport_top(
+    viewport_top: usize,
+    total_lines: usize,
+    viewport_height: usize,
+) -> usize {
+    viewport_top.min(live_bottom_viewport_top(total_lines, viewport_height))
+}
+
+fn next_viewport_top_before_input(
+    _current_top: usize,
+    total_lines: usize,
+    viewport_height: usize,
+) -> usize {
+    live_bottom_viewport_top(total_lines, viewport_height)
+}
+
+fn scroll_delta_to_viewport_top(
+    current_top: usize,
+    total_lines: usize,
+    viewport_height: usize,
+    lines: i32,
+) -> usize {
+    let live_bottom_top = live_bottom_viewport_top(total_lines, viewport_height);
+    let current_top = clamp_terminal_viewport_top(current_top, total_lines, viewport_height);
+
+    if lines == i32::MIN {
+        return live_bottom_top;
+    }
+
+    if lines >= 0 {
+        current_top.saturating_sub(lines as usize)
+    } else {
+        current_top
+            .saturating_add((-lines) as usize)
+            .min(live_bottom_top)
     }
 }
 
@@ -845,7 +907,29 @@ fn window_control_button(
 
 #[cfg(test)]
 mod tests {
-    use super::compact_terminal_title;
+    use super::{
+        clamp_terminal_viewport_top, compact_terminal_title, next_viewport_top_before_input,
+        scroll_delta_to_viewport_top,
+    };
+
+    #[test]
+    fn page_navigation_uses_total_history_bounds() {
+        assert_eq!(clamp_terminal_viewport_top(0, 120, 20), 0);
+        assert_eq!(clamp_terminal_viewport_top(50, 120, 20), 50);
+        assert_eq!(clamp_terminal_viewport_top(200, 120, 20), 100);
+    }
+
+    #[test]
+    fn typing_while_scrolled_up_resets_terminal_to_bottom() {
+        let next_top = next_viewport_top_before_input(35, 120, 20);
+        assert_eq!(next_top, 100);
+    }
+
+    #[test]
+    fn scroll_direction_keeps_zero_at_live_bottom() {
+        assert_eq!(scroll_delta_to_viewport_top(100, 120, 20, 8), 92);
+        assert_eq!(scroll_delta_to_viewport_top(92, 120, 20, -8), 100);
+    }
 
     #[test]
     fn terminal_titles_collapse_shell_paths_to_shell_name() {
