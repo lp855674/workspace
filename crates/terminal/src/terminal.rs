@@ -472,14 +472,16 @@ fn snapshot_viewport_from_parser(parser: &mut Parser) -> TerminalViewport {
     let current_scrollback = parser.screen().scrollback();
     parser.set_scrollback(usize::MAX);
     let max_scrollback = parser.screen().scrollback();
-    parser.set_scrollback(current_scrollback);
+    parser.set_scrollback(0);
 
-    let screen = parser.screen();
-    let (rows, cols) = screen.size();
-    let (cursor_row, _) = screen.cursor_position();
+    let bottom_screen = parser.screen();
+    let (rows, cols) = bottom_screen.size();
+    let (cursor_row, _) = bottom_screen.cursor_position();
     let viewport_height = usize::from(rows);
     let total_lines = max_scrollback
-        .saturating_add(visible_content_lines(screen, cols, cursor_row));
+        .saturating_add(visible_content_lines(bottom_screen, cols, cursor_row));
+
+    parser.set_scrollback(current_scrollback);
     let viewport_top = total_lines
         .saturating_sub(viewport_height)
         .saturating_sub(current_scrollback);
@@ -612,5 +614,34 @@ mod tests {
         assert_eq!(initial.total_lines, 3);
         assert_eq!(resized.total_lines, 3);
         assert_eq!(resized.viewport_height, 8);
+    }
+
+    #[test]
+    fn snapshot_total_lines_is_stable_when_scrolled_up() {
+        let mut parser = Parser::new(3, 20, 64);
+        parser.process(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+        let bottom = snapshot_viewport_from_parser(&mut parser);
+
+        parser.set_scrollback(2);
+        let scrolled_up = snapshot_viewport_from_parser(&mut parser);
+
+        assert_eq!(bottom.total_lines, 5);
+        assert_eq!(scrolled_up.total_lines, 5);
+        assert_eq!(scrolled_up.viewport_top, 0);
+    }
+
+    #[test]
+    fn snapshot_total_lines_does_not_double_count_scrollback_rows() {
+        let mut parser = Parser::new(3, 20, 64);
+        parser.process(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix");
+        parser.process(b"\x1b[2J\x1b[H");
+        let bottom = snapshot_viewport_from_parser(&mut parser);
+
+        parser.set_scrollback(3);
+        let scrolled_up = snapshot_viewport_from_parser(&mut parser);
+
+        assert_eq!(bottom.total_lines, 4);
+        assert_eq!(scrolled_up.total_lines, 4);
+        assert_eq!(scrolled_up.viewport_top, 0);
     }
 }
