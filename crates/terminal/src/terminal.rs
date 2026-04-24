@@ -102,10 +102,6 @@ impl TerminalViewport {
         self.set_viewport_top(self.max_viewport_top())
     }
 
-    fn is_away_from_bottom(self) -> bool {
-        self.viewport_top < self.max_viewport_top()
-    }
-
     fn scrollback_offset(self) -> usize {
         self.max_viewport_top().saturating_sub(self.viewport_top)
     }
@@ -270,6 +266,7 @@ impl TerminalSession {
         let screen = self.parser.screen();
         let (rows, cols) = screen.size();
         let (cursor_row, cursor_col) = screen.cursor_position();
+        let current_scrollback = screen.scrollback();
         let viewport = self.viewport;
         TerminalSnapshot {
             shell_name: self.shell_name.clone(),
@@ -290,8 +287,8 @@ impl TerminalSession {
             viewport_top: viewport.viewport_top,
             viewport_height: viewport.viewport_height(),
             can_scroll_up: viewport.viewport_top > 0,
-            can_scroll_down: viewport.is_away_from_bottom(),
-            scrollback: viewport.scrollback_offset(),
+            can_scroll_down: current_scrollback > 0,
+            scrollback: current_scrollback,
             visible_cells: render_visible_cells(screen, rows, cols),
             visible_lines: render_visible_lines(screen, rows, cols),
         }

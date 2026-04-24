@@ -1017,7 +1017,7 @@ fn render_resize_handle(target: ShellResizeTarget, theme: ShellTheme) -> impl In
             this.w(px(1.)).h_full().cursor(CursorStyle::ResizeLeftRight)
         })
         .when(!horizontal, |this| {
-            this.h(px(1.)).w_full().cursor(CursorStyle::ResizeUpDown)
+            this.h(px(4.)).w_full().cursor(CursorStyle::ResizeUpDown)
         })
         .on_drag(target, |_, _, _, cx| cx.new(|_| ResizeDragPreview))
 }
