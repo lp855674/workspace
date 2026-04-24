@@ -1,0 +1,15 @@
+[package]
+name = "terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+path = "src/terminal.rs"
+
+[dependencies]
+panel = { path = "../panel" }
+portable-pty.workspace = true
+vt100.workspace = true

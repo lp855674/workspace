@@ -6,6 +6,7 @@ use gpui::{
 };
 use gpui_component::{Root, TitleBar};
 use module::ModuleRuntime;
+use terminal::terminal_panel_descriptor;
 use welcome::WelcomeModule;
 use workspace::WorkspaceController;
 
@@ -59,6 +60,7 @@ fn build_initial_frame() -> AppBootstrap {
     for panel in module_runtime.panels() {
         workspace.register_panel(panel.clone());
     }
+    workspace.register_panel(terminal_panel_descriptor());
     for command in command_registry.commands() {
         workspace.record_command(command.id().as_str());
         if command.id().as_str() == "welcome.open" {

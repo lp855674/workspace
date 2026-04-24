@@ -8,6 +8,7 @@ This workspace provides a Zed-style workbench kernel in Rust. It keeps shell con
 
 - `app` owns process startup, native menu installation, client-side window setup, and runtime bootstrap.
 - `app_ui` owns the root frame model and renders shell hosts from `workspace` runtime state.
+- `terminal` owns terminal panel identity, local PTY session lifecycle, byte I/O, screen state buffering, and shell snapshot production for the bottom dock.
 - `workspace` owns panel registration, singleton instance lifecycle, dock layout mutation, focus transitions, command history, and restore-ready serialization.
 - `module` owns feature-module contracts and contribution conflict detection.
 - `panel` owns panel type ids, panel instance ids, singleton lifetime rules, and default close behavior.

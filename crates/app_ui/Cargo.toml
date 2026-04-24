@@ -18,6 +18,7 @@ gpui-component.workspace = true
 keymap = { path = "../keymap" }
 notifications = { path = "../notifications" }
 status_bar = { path = "../status_bar" }
+terminal = { path = "../terminal" }
 theme = { path = "../theme" }
 ui = { path = "../ui" }
 workspace = { path = "../workspace" }

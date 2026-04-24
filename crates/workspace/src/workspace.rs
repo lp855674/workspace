@@ -241,6 +241,10 @@ impl WorkspaceState {
         }
     }
 
+    pub fn hide_panel_by_id(&mut self, panel_id: &str) {
+        self.hide_panel(panel_id);
+    }
+
     pub fn move_panel(&mut self, panel_type_id: &str, placement: DockPlacement) {
         self.open_panel_at(panel_type_id, Some(placement));
     }
@@ -396,6 +400,10 @@ impl WorkspaceController {
 
     pub fn focus_panel(&mut self, panel_id: &str) {
         self.state.focus_panel(panel_id);
+    }
+
+    pub fn hide_panel(&mut self, panel_id: &str) {
+        self.state.hide_panel_by_id(panel_id);
     }
 
     pub fn move_panel(&mut self, panel_id: &str, placement: DockPlacement) {

@@ -2,6 +2,7 @@
 members = [
   "crates/app",
   "crates/app_ui",
+  "crates/terminal",
   "crates/workspace",
   "crates/module",
   "crates/panel",
@@ -41,3 +42,5 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 gpui = "0.2.2"
 gpui_macros = { package = "gpui-macros", version = "0.2.2" }
 gpui-component = "0.5.1"
+portable-pty = "0.8"
+vt100 = "0.15"

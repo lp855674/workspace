@@ -1,8 +1,25 @@
 {
   "name": "Default",
   "tokens": {
-    "app.background": "#111111",
-    "sidebar.background": "#1a1a1a",
-    "status_bar.background": "#222222"
+    "app.background": "#0f1419",
+    "title_bar.background": "#10161d",
+    "title_bar.foreground": "#e1e8ef",
+    "title_bar.border": "#1f2a33",
+    "window_control.foreground": "#f2f7fb",
+    "window_control.hover": "#2b3844",
+    "window_control.close_hover": "#c42b1c",
+    "sidebar.background": "#121921",
+    "sidebar.foreground": "#cdd8e2",
+    "sidebar.muted": "#8092a2",
+    "dock.background": "#0f1419",
+    "dock.header": "#10161d",
+    "border": "#1c2730",
+    "resize_handle.hover": "#4d8fd6",
+    "status_bar.background": "#111820",
+    "status_bar.foreground": "#8fa2b4",
+    "status_bar.active": "#dce7f0",
+    "status_bar.button": "#141d26",
+    "status_bar.button_active": "#1b2834",
+    "status_bar.button_hover": "#24313d"
   }
 }

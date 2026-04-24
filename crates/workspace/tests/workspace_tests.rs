@@ -99,3 +99,24 @@ fn workspace_controller_serializes_current_state() {
     assert_eq!(serialized.focused_panel.as_deref(), Some("welcome.panel"));
     assert_eq!(serialized.visible_panels, vec!["welcome.panel".to_string()]);
 }
+
+#[test]
+fn workspace_controller_hide_panel_removes_visible_state() {
+    let mut controller = WorkspaceController::new("session-4");
+    controller.register_panel(PanelDescriptor::new(
+        "terminal.panel",
+        "Terminal",
+        DockPlacement::Bottom,
+    ));
+    controller.focus_panel("terminal.panel");
+
+    controller.hide_panel("terminal.panel");
+
+    assert!(!controller.state().is_panel_visible("terminal.panel"));
+    assert!(
+        !controller
+            .state()
+            .dock_layout
+            .is_visible(DockPlacement::Bottom)
+    );
+}

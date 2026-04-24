@@ -4,19 +4,21 @@ use theme::ThemeDefinition;
 fn theme_definition_default_has_expected_name_and_tokens() {
     let theme = ThemeDefinition::default();
     assert_eq!(theme.name, "Default");
-    assert_eq!(theme.tokens.len(), 3);
+    assert_eq!(theme.tokens.len(), 20);
     assert_eq!(
         theme.tokens.get("app.background"),
-        Some(&"#111111".to_string())
+        Some(&"#0f1419".to_string())
     );
     assert_eq!(
         theme.tokens.get("sidebar.background"),
-        Some(&"#1a1a1a".to_string())
+        Some(&"#121921".to_string())
     );
     assert_eq!(
         theme.tokens.get("status_bar.background"),
-        Some(&"#222222".to_string())
+        Some(&"#111820".to_string())
     );
+    assert_eq!(theme.token_hex("status_bar.background", 0), 0x111820);
+    assert_eq!(theme.token_hex("missing", 0xabcdef), 0xabcdef);
 }
 
 #[test]
