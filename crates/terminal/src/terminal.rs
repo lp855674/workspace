@@ -291,20 +291,7 @@ impl TerminalSession {
     }
 
     fn sync_viewport_from_parser(&mut self) {
-        let current_scrollback = self.parser.screen().scrollback();
-        self.parser.set_scrollback(usize::MAX);
-        let max_scrollback = self.parser.screen().scrollback();
-        self.parser.set_scrollback(current_scrollback);
-
-        let viewport_height = usize::from(self.parser.screen().size().0);
-        let total_lines = max_scrollback.saturating_add(viewport_height);
-        let viewport_top = max_scrollback.saturating_sub(current_scrollback);
-
-        self.viewport = TerminalViewport {
-            total_lines,
-            viewport_top,
-            viewport_height,
-        };
+        self.viewport = snapshot_viewport_from_parser(&mut self.parser);
     }
 }
 
@@ -481,6 +468,42 @@ fn clamp_viewport_top(
     viewport_top.min(total_lines.saturating_sub(viewport_height))
 }
 
+fn snapshot_viewport_from_parser(parser: &mut Parser) -> TerminalViewport {
+    let current_scrollback = parser.screen().scrollback();
+    parser.set_scrollback(usize::MAX);
+    let max_scrollback = parser.screen().scrollback();
+    parser.set_scrollback(current_scrollback);
+
+    let screen = parser.screen();
+    let (rows, cols) = screen.size();
+    let (cursor_row, _) = screen.cursor_position();
+    let viewport_height = usize::from(rows);
+    let total_lines = max_scrollback
+        .saturating_add(visible_content_lines(screen, cols, cursor_row));
+    let viewport_top = total_lines
+        .saturating_sub(viewport_height)
+        .saturating_sub(current_scrollback);
+
+    TerminalViewport {
+        total_lines,
+        viewport_top,
+        viewport_height,
+    }
+}
+
+fn visible_content_lines(screen: &Screen, cols: u16, cursor_row: u16) -> usize {
+    let last_non_empty_line = screen
+        .rows(0, cols)
+        .enumerate()
+        .filter_map(|(row_index, line)| {
+            (!line.trim_end_matches(' ').is_empty()).then_some(row_index + 1)
+        })
+        .last()
+        .unwrap_or(0);
+
+    last_non_empty_line.max(usize::from(cursor_row).saturating_add(1))
+}
+
 #[cfg(windows)]
 fn local_shell_candidates() -> &'static [&'static str] {
     &["pwsh.exe", "powershell.exe", "cmd.exe"]
@@ -519,10 +542,11 @@ fn configure_command_builder(_builder: &mut CommandBuilder, _shell: &str) {}
 mod tests {
     use super::{
         TERMINAL_PANEL_ID, TerminalViewport, ansi_index_to_hex, clamp_scrollback_offset,
-        clamp_viewport_top, color_to_hex, terminal_panel_descriptor,
+        clamp_viewport_top, color_to_hex, snapshot_viewport_from_parser,
+        terminal_panel_descriptor,
     };
     use panel::DockPlacement;
-    use vt100::Color;
+    use vt100::{Color, Parser};
 
     #[test]
     fn terminal_panel_defaults_to_bottom_singleton() {
@@ -574,5 +598,19 @@ mod tests {
         };
 
         assert_eq!(state.with_height(30).viewport_top, 90);
+    }
+
+    #[test]
+    fn snapshot_total_lines_tracks_terminal_content_across_resize() {
+        let mut parser = Parser::new(4, 20, 64);
+        parser.process(b"one\r\ntwo\r\nthree");
+        let initial = snapshot_viewport_from_parser(&mut parser);
+
+        parser.set_size(8, 20);
+        let resized = snapshot_viewport_from_parser(&mut parser);
+
+        assert_eq!(initial.total_lines, 3);
+        assert_eq!(resized.total_lines, 3);
+        assert_eq!(resized.viewport_height, 8);
     }
 }
