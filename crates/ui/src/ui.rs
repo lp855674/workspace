@@ -1,16 +1,17 @@
 use gpui::{
     AnyElement, App, CursorStyle, FocusHandle, FontWeight, IntoElement, KeyDownEvent,
     ParentElement, Pixels, Point, Render, ScrollWheelEvent, StatefulInteractiveElement, Window,
-    div, prelude::*, px, rgb,
+    div, point, prelude::*, px, rgb, size,
 };
 use gpui_component::{
     Icon, IconName, Sizable,
     list::ListItem,
-    scroll::ScrollableElement,
+    scroll::{ScrollableElement, Scrollbar, ScrollbarHandle, ScrollbarShow},
     tooltip::Tooltip,
     tree::{TreeEntry, tree},
 };
 use status_bar::StatusBarItem;
+use std::cell::Cell;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,7 +89,7 @@ pub struct ShellTerminalCell {
     pub underline: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ShellTerminalSession {
     pub shell_name: String,
     pub cwd: String,
@@ -107,8 +108,43 @@ pub struct ShellTerminalSession {
     pub can_scroll_up: bool,
     pub can_scroll_down: bool,
     pub away_from_bottom: bool,
+    pub scrollbar_line_height: Pixels,
+    pub pending_display_offset: Rc<Cell<Option<usize>>>,
     pub visible_cells: Vec<Vec<ShellTerminalCell>>,
     pub visible_lines: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct TerminalScrollbarHandle {
+    line_height: Pixels,
+    total_lines: usize,
+    viewport_lines: usize,
+    display_offset: usize,
+    pending_display_offset: Rc<Cell<Option<usize>>>,
+}
+
+impl ScrollbarHandle for TerminalScrollbarHandle {
+    fn offset(&self) -> Point<Pixels> {
+        let scroll_offset = self
+            .total_lines
+            .saturating_sub(self.viewport_lines)
+            .saturating_sub(self.display_offset);
+        point(Pixels::ZERO, -(scroll_offset as f32 * self.line_height))
+    }
+
+    fn set_offset(&self, offset: Point<Pixels>) {
+        let offset_delta = (offset.y / self.line_height).round() as i32;
+        let max_offset = self.total_lines.saturating_sub(self.viewport_lines);
+        let display_offset = (max_offset as i32 + offset_delta).clamp(0, max_offset as i32);
+        self.pending_display_offset.set(Some(display_offset as usize));
+    }
+
+    fn content_size(&self) -> gpui::Size<Pixels> {
+        size(
+            Pixels::ZERO,
+            self.total_lines.max(self.viewport_lines) as f32 * self.line_height,
+        )
+    }
 }
 
 pub struct ShellDockHost {
@@ -515,9 +551,17 @@ fn render_panel_surface(
 
 fn render_terminal_session(terminal: ShellTerminalSession, theme: ShellTheme) -> impl IntoElement {
     let output_lines = terminal_output_lines(&terminal, theme);
+    let scrollbar_handle = TerminalScrollbarHandle {
+        line_height: terminal.scrollbar_line_height,
+        total_lines: terminal.total_lines,
+        viewport_lines: terminal.viewport_height,
+        display_offset: terminal.scrollback,
+        pending_display_offset: terminal.pending_display_offset.clone(),
+    };
 
     div().size_full().bg(rgb(theme.dock_background)).child(
         div()
+            .relative()
             .size_full()
             .font_family("Consolas")
             .text_xs()
@@ -526,7 +570,10 @@ fn render_terminal_session(terminal: ShellTerminalSession, theme: ShellTheme) ->
             .px_3()
             .py_2()
             .pr_5()
-            .child(div().w_full().flex().flex_col().children(output_lines)),
+            .child(div().w_full().flex().flex_col().children(output_lines))
+            .child(
+                Scrollbar::vertical(&scrollbar_handle).scrollbar_show(ScrollbarShow::Always),
+            ),
     )
 }
 

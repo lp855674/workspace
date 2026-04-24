@@ -11,6 +11,7 @@ use gpui_component::{
 };
 use keymap::KeyBinding;
 use status_bar::StatusBarItem;
+use std::cell::Cell;
 use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
@@ -29,6 +30,7 @@ struct TerminalTabRuntime {
     session: TerminalSession,
     display_offset: usize,
     follow_output: bool,
+    pending_display_offset: Rc<Cell<Option<usize>>>,
 }
 
 pub struct AppFrame {
@@ -127,6 +129,8 @@ impl Render for AppFrame {
                 can_scroll_up: snapshot.can_scroll_up,
                 can_scroll_down: snapshot.can_scroll_down,
                 away_from_bottom: snapshot.can_scroll_down,
+                scrollbar_line_height: px(18.),
+                pending_display_offset: tab.pending_display_offset.clone(),
                 visible_cells: snapshot
                     .visible_cells
                     .into_iter()
@@ -318,6 +322,11 @@ impl AppFrame {
 
     fn refresh_local_shell_status(&mut self) {
         for tab in &mut self.terminal_tabs {
+            if let Some(new_display_offset) = tab.pending_display_offset.take() {
+                tab.display_offset = new_display_offset.min(tab.session.max_safe_scrollback());
+                tab.follow_output = tab.display_offset == 0;
+                tab.session.set_scrollback(tab.display_offset);
+            }
             tab.session.refresh();
             if tab.follow_output {
                 tab.session.set_scrollback(0);
@@ -427,6 +436,7 @@ impl AppFrame {
             Ok(session) => {
                 let id = format!("terminal-{}", self.next_terminal_id);
                 let label = format!("Terminal {}", self.next_terminal_id);
+                let pending_display_offset = Rc::new(Cell::new(None));
                 self.next_terminal_id += 1;
                 self.terminal_tabs.push(TerminalTabRuntime {
                     id: id.clone(),
@@ -434,6 +444,7 @@ impl AppFrame {
                     session,
                     display_offset: 0,
                     follow_output: true,
+                    pending_display_offset,
                 });
                 self.active_terminal_id = Some(id);
                 if let Some(tab) = self.active_terminal_mut() {

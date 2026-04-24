@@ -1,4 +1,6 @@
 use status_bar::StatusBarItem;
+use std::cell::Cell;
+use std::rc::Rc;
 use ui::{
     ShellDockHost, ShellStatusToolbar, ShellTerminalCell, ShellTerminalSession, ShellTerminalTab,
     ShellWorkspace,
@@ -81,6 +83,8 @@ fn dock_hosts_can_carry_a_real_terminal_session() {
         can_scroll_up: false,
         can_scroll_down: false,
         away_from_bottom: false,
+        scrollbar_line_height: gpui::px(18.),
+        pending_display_offset: Rc::new(Cell::new(None)),
         visible_cells: vec![vec![ShellTerminalCell {
             text: "PS".to_owned(),
             foreground: Some(0xcdd8e2),
@@ -141,6 +145,8 @@ fn terminal_tabs_track_active_identity() {
         can_scroll_up: true,
         can_scroll_down: true,
         away_from_bottom: true,
+        scrollbar_line_height: gpui::px(18.),
+        pending_display_offset: Rc::new(Cell::new(None)),
         visible_cells: vec![],
         visible_lines: vec![],
     });
@@ -183,6 +189,8 @@ fn terminal_session_carries_viewport_metadata() {
         can_scroll_up: true,
         can_scroll_down: false,
         away_from_bottom: false,
+        scrollbar_line_height: gpui::px(18.),
+        pending_display_offset: Rc::new(Cell::new(None)),
         visible_cells: vec![],
         visible_lines: vec![],
     };
@@ -213,6 +221,8 @@ fn jump_to_bottom_badge_only_shows_when_terminal_is_away_from_bottom() {
         can_scroll_up: true,
         can_scroll_down: false,
         away_from_bottom: false,
+        scrollbar_line_height: gpui::px(18.),
+        pending_display_offset: Rc::new(Cell::new(None)),
         visible_cells: vec![],
         visible_lines: vec![],
     };
