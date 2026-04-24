@@ -318,6 +318,7 @@ impl AppFrame {
     fn refresh_local_shell_status(&mut self) {
         for tab in &mut self.terminal_tabs {
             tab.session.refresh();
+            tab.viewport_top = tab.session.viewport_top();
         }
     }
 
