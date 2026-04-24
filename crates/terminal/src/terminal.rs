@@ -22,6 +22,11 @@ pub struct TerminalSnapshot {
     pub cursor_col: u16,
     pub cursor_hidden: bool,
     pub application_cursor: bool,
+    pub total_lines: usize,
+    pub viewport_top: usize,
+    pub viewport_height: usize,
+    pub can_scroll_up: bool,
+    pub can_scroll_down: bool,
     pub scrollback: usize,
     pub visible_cells: Vec<Vec<TerminalCell>>,
     pub visible_lines: Vec<String>,
@@ -51,8 +56,59 @@ pub struct TerminalSession {
     writer: Box<dyn Write + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     parser: Parser,
+    viewport: TerminalViewport,
     output_rx: Receiver<Vec<u8>>,
     status: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TerminalViewport {
+    total_lines: usize,
+    viewport_top: usize,
+    viewport_height: usize,
+}
+
+impl TerminalViewport {
+    fn viewport_height(self) -> usize {
+        self.viewport_height
+    }
+
+    fn max_viewport_top(self) -> usize {
+        self.total_lines.saturating_sub(self.viewport_height)
+    }
+
+    fn set_viewport_top(self, viewport_top: usize) -> Self {
+        Self {
+            viewport_top: clamp_viewport_top(
+                viewport_top,
+                self.total_lines,
+                self.viewport_height,
+            ),
+            ..self
+        }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn with_height(self, viewport_height: usize) -> Self {
+        Self {
+            viewport_height,
+            ..self
+        }
+        .set_viewport_top(self.viewport_top)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn jump_to_bottom(self) -> Self {
+        self.set_viewport_top(self.max_viewport_top())
+    }
+
+    fn is_away_from_bottom(self) -> bool {
+        self.viewport_top < self.max_viewport_top()
+    }
+
+    fn scrollback_offset(self) -> usize {
+        self.max_viewport_top().saturating_sub(self.viewport_top)
+    }
 }
 
 impl TerminalSession {
@@ -106,6 +162,11 @@ impl TerminalSession {
             writer,
             child,
             parser: Parser::new(40, 120, 16_384),
+            viewport: TerminalViewport {
+                total_lines: 40,
+                viewport_top: 0,
+                viewport_height: 40,
+            },
             output_rx,
             status: "running".to_owned(),
         })
@@ -115,6 +176,7 @@ impl TerminalSession {
         while let Ok(chunk) = self.output_rx.try_recv() {
             self.parser.process(&chunk);
         }
+        self.sync_viewport_from_parser();
 
         match self.child.try_wait() {
             Ok(Some(status)) => {
@@ -150,34 +212,58 @@ impl TerminalSession {
 
     pub fn resize(&mut self, rows: u16, cols: u16) -> Result<(), String> {
         self.parser.set_size(rows, cols);
-        self.master
+        let result = self
+            .master
             .resize(PtySize {
                 rows,
                 cols,
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|error| format!("resize failed: {error}"))
+            .map_err(|error| format!("resize failed: {error}"));
+        self.sync_viewport_from_parser();
+        result
     }
 
     pub fn set_scrollback(&mut self, rows: usize) {
-        self.parser
-            .set_scrollback(clamp_scrollback_offset(rows, self.max_safe_scrollback()));
+        self.sync_viewport_from_parser();
+        let viewport_top = self.max_viewport_top().saturating_sub(
+            clamp_scrollback_offset(rows, self.max_safe_scrollback()),
+        );
+        self.set_viewport_top(viewport_top);
     }
 
     pub fn scrollback(&self) -> usize {
-        self.parser.screen().scrollback()
+        self.viewport.scrollback_offset()
     }
 
     pub fn max_safe_scrollback(&self) -> usize {
-        let (rows, _) = self.parser.screen().size();
-        usize::from(rows)
+        self.max_viewport_top()
+    }
+
+    pub fn total_lines(&self) -> usize {
+        self.viewport.total_lines
+    }
+
+    pub fn viewport_height(&self) -> usize {
+        self.viewport.viewport_height()
+    }
+
+    pub fn max_viewport_top(&self) -> usize {
+        self.viewport.max_viewport_top()
+    }
+
+    pub fn set_viewport_top(&mut self, viewport_top: usize) {
+        self.viewport = self.viewport.set_viewport_top(viewport_top);
+        self.parser
+            .set_scrollback(self.viewport.scrollback_offset());
     }
 
     pub fn snapshot(&self) -> TerminalSnapshot {
         let screen = self.parser.screen();
         let (rows, cols) = screen.size();
         let (cursor_row, cursor_col) = screen.cursor_position();
+        let viewport = self.viewport;
         TerminalSnapshot {
             shell_name: self.shell_name.clone(),
             cwd: self.cwd.clone(),
@@ -193,10 +279,32 @@ impl TerminalSession {
             cursor_col,
             cursor_hidden: screen.hide_cursor(),
             application_cursor: screen.application_cursor(),
-            scrollback: screen.scrollback(),
+            total_lines: viewport.total_lines,
+            viewport_top: viewport.viewport_top,
+            viewport_height: viewport.viewport_height(),
+            can_scroll_up: viewport.viewport_top > 0,
+            can_scroll_down: viewport.is_away_from_bottom(),
+            scrollback: viewport.scrollback_offset(),
             visible_cells: render_visible_cells(screen, rows, cols),
             visible_lines: render_visible_lines(screen, rows, cols),
         }
+    }
+
+    fn sync_viewport_from_parser(&mut self) {
+        let current_scrollback = self.parser.screen().scrollback();
+        self.parser.set_scrollback(usize::MAX);
+        let max_scrollback = self.parser.screen().scrollback();
+        self.parser.set_scrollback(current_scrollback);
+
+        let viewport_height = usize::from(self.parser.screen().size().0);
+        let total_lines = max_scrollback.saturating_add(viewport_height);
+        let viewport_top = max_scrollback.saturating_sub(current_scrollback);
+
+        self.viewport = TerminalViewport {
+            total_lines,
+            viewport_top,
+            viewport_height,
+        };
     }
 }
 
@@ -365,6 +473,14 @@ fn clamp_scrollback_offset(rows: usize, max_safe_rows: usize) -> usize {
     rows.min(max_safe_rows)
 }
 
+fn clamp_viewport_top(
+    viewport_top: usize,
+    total_lines: usize,
+    viewport_height: usize,
+) -> usize {
+    viewport_top.min(total_lines.saturating_sub(viewport_height))
+}
+
 #[cfg(windows)]
 fn local_shell_candidates() -> &'static [&'static str] {
     &["pwsh.exe", "powershell.exe", "cmd.exe"]
@@ -402,8 +518,8 @@ fn configure_command_builder(_builder: &mut CommandBuilder, _shell: &str) {}
 #[cfg(test)]
 mod tests {
     use super::{
-        TERMINAL_PANEL_ID, ansi_index_to_hex, clamp_scrollback_offset, color_to_hex,
-        terminal_panel_descriptor,
+        TERMINAL_PANEL_ID, TerminalViewport, ansi_index_to_hex, clamp_scrollback_offset,
+        clamp_viewport_top, color_to_hex, terminal_panel_descriptor,
     };
     use panel::DockPlacement;
     use vt100::Color;
@@ -428,5 +544,35 @@ mod tests {
         assert_eq!(clamp_scrollback_offset(0, 40), 0);
         assert_eq!(clamp_scrollback_offset(8, 40), 8);
         assert_eq!(clamp_scrollback_offset(120, 40), 40);
+    }
+
+    #[test]
+    fn viewport_offset_is_clamped_to_total_history_not_viewport_height() {
+        assert_eq!(clamp_viewport_top(0, 80, 20), 0);
+        assert_eq!(clamp_viewport_top(12, 80, 20), 12);
+        assert_eq!(clamp_viewport_top(75, 80, 20), 60);
+    }
+
+    #[test]
+    fn jump_to_bottom_clears_viewport_offset() {
+        let state = TerminalViewport {
+            total_lines: 120,
+            viewport_top: 40,
+            viewport_height: 20,
+        };
+
+        assert_eq!(state.jump_to_bottom().viewport_top, 100);
+        assert!(!state.jump_to_bottom().is_away_from_bottom());
+    }
+
+    #[test]
+    fn resize_keeps_viewport_top_in_bounds() {
+        let state = TerminalViewport {
+            total_lines: 120,
+            viewport_top: 95,
+            viewport_height: 20,
+        };
+
+        assert_eq!(state.with_height(30).viewport_top, 90);
     }
 }
