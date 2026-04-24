@@ -13,6 +13,7 @@ This crate owns the local shell runtime behind the workbench bottom dock. It is 
 - write user input bytes into the shell PTY
 - expose a viewport-aware snapshot for `app_ui` / `ui`, including terminal cells, ANSI styles, cursor state, retained history size, and viewport position
 - allow the workbench runtime to move the terminal viewport through scrollback without adding a second UI scroll model
+- clamp parser scrollback requests to one visible page because `vt100::set_scrollback()` is not a safe arbitrary-history viewport API
 
 ## Non-Goals
 
@@ -21,3 +22,9 @@ This crate owns the local shell runtime behind the workbench bottom dock. It is 
 - dock registration or panel lifecycle
 
 Those remain future work if the project adopts a fuller Zed-style `terminal + terminal_view` split.
+
+## Notes
+
+- `TerminalSession` tracks logical history bounds separately from the parser snapshot.
+- The current implementation keeps the process stable by clamping parser scrollback to the terminal's visible height and syncing the UI viewport back to the actual parser-backed viewport.
+- Full-history scrolling still requires a dedicated history/view layer above `vt100`; it cannot be implemented safely by sending raw deep offsets into `vt100::set_scrollback()`.

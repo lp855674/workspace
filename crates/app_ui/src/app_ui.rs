@@ -356,6 +356,7 @@ impl AppFrame {
             tab.session.viewport_height(),
         );
         tab.session.set_viewport_top(tab.viewport_top);
+        tab.viewport_top = tab.session.viewport_top();
         let Some(bytes) = key_event_to_bytes_with_mode(event, tab.session.application_cursor())
         else {
             return;
@@ -393,6 +394,7 @@ impl AppFrame {
                 viewport_height,
             );
             tab.session.set_viewport_top(tab.viewport_top);
+            tab.viewport_top = tab.session.viewport_top();
         }
     }
 
@@ -437,6 +439,7 @@ impl AppFrame {
                     tab.viewport_top =
                         live_bottom_viewport_top(tab.session.total_lines(), visible_rows);
                     tab.session.set_viewport_top(tab.viewport_top);
+                    tab.viewport_top = tab.session.viewport_top();
                 }
                 self.start_terminal_poll(cx);
             }
@@ -479,6 +482,7 @@ impl AppFrame {
                     viewport_height,
                 );
                 tab.session.set_viewport_top(tab.viewport_top);
+                tab.viewport_top = tab.session.viewport_top();
             }
             true
         } else {
@@ -531,6 +535,7 @@ impl AppFrame {
             lines,
         );
         tab.session.set_viewport_top(tab.viewport_top);
+        tab.viewport_top = tab.session.viewport_top();
     }
 }
 

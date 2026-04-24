@@ -238,11 +238,15 @@ impl TerminalSession {
     }
 
     pub fn max_safe_scrollback(&self) -> usize {
-        self.max_viewport_top()
+        self.viewport.viewport_height()
     }
 
     pub fn total_lines(&self) -> usize {
         self.viewport.total_lines
+    }
+
+    pub fn viewport_top(&self) -> usize {
+        self.viewport.viewport_top
     }
 
     pub fn viewport_height(&self) -> usize {
@@ -254,9 +258,12 @@ impl TerminalSession {
     }
 
     pub fn set_viewport_top(&mut self, viewport_top: usize) {
-        self.viewport = self.viewport.set_viewport_top(viewport_top);
-        self.parser
-            .set_scrollback(self.viewport.scrollback_offset());
+        self.viewport = clamp_viewport_for_parser(
+            self.viewport.total_lines,
+            self.viewport.viewport_height,
+            viewport_top,
+        );
+        self.parser.set_scrollback(self.viewport.scrollback_offset());
     }
 
     pub fn snapshot(&self) -> TerminalSnapshot {
@@ -468,6 +475,25 @@ fn clamp_viewport_top(
     viewport_top.min(total_lines.saturating_sub(viewport_height))
 }
 
+fn clamp_viewport_for_parser(
+    total_lines: usize,
+    viewport_height: usize,
+    requested_viewport_top: usize,
+) -> TerminalViewport {
+    let live_bottom_top = total_lines.saturating_sub(viewport_height);
+    let requested_viewport_top =
+        clamp_viewport_top(requested_viewport_top, total_lines, viewport_height);
+    let requested_scrollback = live_bottom_top.saturating_sub(requested_viewport_top);
+    let safe_scrollback = requested_scrollback.min(viewport_height);
+    let actual_viewport_top = live_bottom_top.saturating_sub(safe_scrollback);
+
+    TerminalViewport {
+        total_lines,
+        viewport_top: actual_viewport_top,
+        viewport_height,
+    }
+}
+
 fn snapshot_viewport_from_parser(parser: &mut Parser) -> TerminalViewport {
     let current_scrollback = parser.screen().scrollback();
     parser.set_scrollback(usize::MAX);
@@ -544,8 +570,8 @@ fn configure_command_builder(_builder: &mut CommandBuilder, _shell: &str) {}
 mod tests {
     use super::{
         TERMINAL_PANEL_ID, TerminalViewport, ansi_index_to_hex, clamp_scrollback_offset,
-        clamp_viewport_top, color_to_hex, snapshot_viewport_from_parser,
-        terminal_panel_descriptor,
+        clamp_viewport_for_parser, clamp_viewport_top, color_to_hex,
+        snapshot_viewport_from_parser, terminal_panel_descriptor,
     };
     use panel::DockPlacement;
     use vt100::{Color, Parser};
@@ -600,6 +626,14 @@ mod tests {
         };
 
         assert_eq!(state.with_height(30).viewport_top, 90);
+    }
+
+    #[test]
+    fn parser_viewport_is_clamped_to_one_visible_page() {
+        let viewport = clamp_viewport_for_parser(200, 20, 100);
+
+        assert_eq!(viewport.viewport_top, 160);
+        assert_eq!(viewport.scrollback_offset(), 20);
     }
 
     #[test]
