@@ -28,6 +28,7 @@ struct TerminalTabRuntime {
     label: String,
     session: TerminalSession,
     viewport_top: usize,
+    follow_output: bool,
 }
 
 pub struct AppFrame {
@@ -318,7 +319,19 @@ impl AppFrame {
     fn refresh_local_shell_status(&mut self) {
         for tab in &mut self.terminal_tabs {
             tab.session.refresh();
+            if tab.follow_output {
+                tab.viewport_top = live_bottom_viewport_top(
+                    tab.session.total_lines(),
+                    tab.session.viewport_height(),
+                );
+                tab.session.set_viewport_top(tab.viewport_top);
+            }
             tab.viewport_top = tab.session.viewport_top();
+            tab.follow_output = is_live_bottom_viewport_top(
+                tab.viewport_top,
+                tab.session.total_lines(),
+                tab.session.viewport_height(),
+            );
         }
     }
 
@@ -351,6 +364,7 @@ impl AppFrame {
             self.upsert_status_item("local-shell", "Open a local shell first".to_owned());
             return;
         };
+        tab.follow_output = true;
         tab.viewport_top = next_viewport_top_before_input(
             tab.viewport_top,
             tab.session.total_lines(),
@@ -389,13 +403,22 @@ impl AppFrame {
         for tab in &mut self.terminal_tabs {
             let _result = tab.session.resize(rows, cols);
             let viewport_height = tab.session.viewport_height();
-            tab.viewport_top = clamp_terminal_viewport_top(
+            tab.viewport_top = if tab.follow_output {
+                live_bottom_viewport_top(tab.session.total_lines(), viewport_height)
+            } else {
+                clamp_terminal_viewport_top(
+                    tab.viewport_top,
+                    tab.session.total_lines(),
+                    viewport_height,
+                )
+            };
+            tab.session.set_viewport_top(tab.viewport_top);
+            tab.viewport_top = tab.session.viewport_top();
+            tab.follow_output = is_live_bottom_viewport_top(
                 tab.viewport_top,
                 tab.session.total_lines(),
                 viewport_height,
             );
-            tab.session.set_viewport_top(tab.viewport_top);
-            tab.viewport_top = tab.session.viewport_top();
         }
     }
 
@@ -433,6 +456,7 @@ impl AppFrame {
                     label,
                     session,
                     viewport_top: 0,
+                    follow_output: true,
                 });
                 self.active_terminal_id = Some(id);
                 let visible_rows = self.visible_terminal_rows();
@@ -441,6 +465,7 @@ impl AppFrame {
                         live_bottom_viewport_top(tab.session.total_lines(), visible_rows);
                     tab.session.set_viewport_top(tab.viewport_top);
                     tab.viewport_top = tab.session.viewport_top();
+                    tab.follow_output = true;
                 }
                 self.start_terminal_poll(cx);
             }
@@ -477,13 +502,22 @@ impl AppFrame {
             self.active_terminal_id = Some(tab_id.to_owned());
             if let Some(tab) = self.active_terminal_mut() {
                 let viewport_height = tab.session.viewport_height();
-                tab.viewport_top = clamp_terminal_viewport_top(
+                tab.viewport_top = if tab.follow_output {
+                    live_bottom_viewport_top(tab.session.total_lines(), viewport_height)
+                } else {
+                    clamp_terminal_viewport_top(
+                        tab.viewport_top,
+                        tab.session.total_lines(),
+                        viewport_height,
+                    )
+                };
+                tab.session.set_viewport_top(tab.viewport_top);
+                tab.viewport_top = tab.session.viewport_top();
+                tab.follow_output = is_live_bottom_viewport_top(
                     tab.viewport_top,
                     tab.session.total_lines(),
                     viewport_height,
                 );
-                tab.session.set_viewport_top(tab.viewport_top);
-                tab.viewport_top = tab.session.viewport_top();
             }
             true
         } else {
@@ -537,6 +571,11 @@ impl AppFrame {
         );
         tab.session.set_viewport_top(tab.viewport_top);
         tab.viewport_top = tab.session.viewport_top();
+        tab.follow_output = is_live_bottom_viewport_top(
+            tab.viewport_top,
+            tab.session.total_lines(),
+            tab.session.viewport_height(),
+        );
     }
 }
 
@@ -550,6 +589,15 @@ fn clamp_terminal_viewport_top(
     viewport_height: usize,
 ) -> usize {
     viewport_top.min(live_bottom_viewport_top(total_lines, viewport_height))
+}
+
+fn is_live_bottom_viewport_top(
+    viewport_top: usize,
+    total_lines: usize,
+    viewport_height: usize,
+) -> bool {
+    clamp_terminal_viewport_top(viewport_top, total_lines, viewport_height)
+        == live_bottom_viewport_top(total_lines, viewport_height)
 }
 
 fn next_viewport_top_before_input(
@@ -914,8 +962,8 @@ fn window_control_button(
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_terminal_viewport_top, compact_terminal_title, next_viewport_top_before_input,
-        scroll_delta_to_viewport_top,
+        clamp_terminal_viewport_top, compact_terminal_title, is_live_bottom_viewport_top,
+        next_viewport_top_before_input, scroll_delta_to_viewport_top,
     };
 
     #[test]
@@ -935,6 +983,13 @@ mod tests {
     fn scroll_direction_keeps_zero_at_live_bottom() {
         assert_eq!(scroll_delta_to_viewport_top(100, 120, 20, 8), 92);
         assert_eq!(scroll_delta_to_viewport_top(92, 120, 20, -8), 100);
+    }
+
+    #[test]
+    fn live_bottom_detection_matches_terminal_history_bounds() {
+        assert!(is_live_bottom_viewport_top(100, 120, 20));
+        assert!(!is_live_bottom_viewport_top(99, 120, 20));
+        assert!(is_live_bottom_viewport_top(0, 10, 20));
     }
 
     #[test]
