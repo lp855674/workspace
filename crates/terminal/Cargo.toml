@@ -12,4 +12,4 @@ path = "src/terminal.rs"
 [dependencies]
 panel = { path = "../panel" }
 portable-pty.workspace = true
-vt100.workspace = true
+alacritty_terminal.workspace = true

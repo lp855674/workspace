@@ -903,7 +903,15 @@ fn render_terminal_tab(
                 cx,
             );
         })
-        .child(Icon::new(IconName::SquareTerminal).xsmall())
+        .child(
+            Icon::new(IconName::SquareTerminal)
+                .small()
+                .text_color(if tab.active {
+                    rgb(theme.status_bar_active)
+                } else {
+                    rgb(theme.status_bar_foreground)
+                }),
+        )
         .child(
             div()
                 .min_w_0()
@@ -939,7 +947,15 @@ fn render_terminal_tab(
                         cx,
                     );
                 })
-                .child(Icon::new(IconName::Close).xsmall()),
+                .child(
+                    Icon::new(IconName::Close)
+                        .small()
+                        .text_color(if tab.active {
+                            rgb(theme.status_bar_active)
+                        } else {
+                            rgb(theme.status_bar_foreground)
+                        }),
+                ),
         )
 }
 
@@ -973,7 +989,7 @@ fn header_button(
         .on_click(move |_, window, cx| {
             on_action(&action, window, cx);
         })
-        .child(Icon::new(icon).small())
+        .child(Icon::new(icon).large().text_color(rgb(theme.status_bar_active)))
 }
 
 fn toolbar_button(
@@ -1022,7 +1038,13 @@ fn toolbar_button(
         .on_click(move |_, window, cx| {
             on_action(&action, window, cx);
         })
-        .child(Icon::new(icon).small())
+        .child(
+            Icon::new(icon).large().text_color(if active {
+                rgb(theme.status_bar_active)
+            } else {
+                rgb(theme.status_bar_foreground)
+            }),
+        )
         .when_some(label, |this, label| {
             this.child(div().text_xs().child(label))
         })
@@ -1045,7 +1067,7 @@ fn toolbar_static_icon(
         .rounded(px(4.))
         .text_color(rgb(theme.status_bar_foreground))
         .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
-        .child(Icon::new(icon).small())
+        .child(Icon::new(icon).large().text_color(rgb(theme.status_bar_foreground)))
 }
 
 fn render_resize_handle(target: ShellResizeTarget, theme: ShellTheme) -> impl IntoElement {
@@ -1055,18 +1077,34 @@ fn render_resize_handle(target: ShellResizeTarget, theme: ShellTheme) -> impl In
         ShellResizeTarget::Bottom => ("resize-bottom", false),
     };
 
-    div()
+    let handle = div()
         .id(id)
         .flex_shrink_0()
-        .bg(rgb(theme.border))
-        .hover(move |style| style.bg(rgb(theme.resize_handle_hover)))
         .when(horizontal, |this| {
             this.w(px(1.)).h_full().cursor(CursorStyle::ResizeLeftRight)
         })
         .when(!horizontal, |this| {
             this.h(px(4.)).w_full().cursor(CursorStyle::ResizeUpDown)
         })
-        .on_drag(target, |_, _, _, cx| cx.new(|_| ResizeDragPreview))
+        .on_drag(target, |_, _, _, cx| cx.new(|_| ResizeDragPreview));
+
+    if horizontal {
+        handle
+            .bg(rgb(theme.border))
+            .hover(move |style| style.bg(rgb(theme.resize_handle_hover)))
+            .into_any_element()
+    } else {
+        handle
+            .child(
+                div()
+                    .mt(px(1.5))
+                    .h(px(1.))
+                    .w_full()
+                    .bg(rgb(theme.border))
+                    .hover(move |style| style.bg(rgb(theme.resize_handle_hover))),
+            )
+            .into_any_element()
+    }
 }
 
 struct ResizeDragPreview;

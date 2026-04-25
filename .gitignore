@@ -1,6 +1,8 @@
 /target/
 **/target/
 target*
+codex-target*
+
 
 # Local secrets / config
 .env

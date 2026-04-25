@@ -1,14 +1,24 @@
+use alacritty_terminal::{
+    event::{Event as AlacrittyEvent, EventListener},
+    grid::{Dimensions, Indexed, Scroll},
+    term::{
+        self, Config, Term, TermMode,
+        cell::{Cell as AlacrittyCell, Flags},
+        color::Colors,
+    },
+    vte::ansi::{Color, CursorShape, NamedColor, Processor, Rgb, StdSyncHandler},
+};
 use panel::{DockPlacement, PanelDescriptor, PanelTypeId};
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use std::cmp::Ordering;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
-use vt100::Color;
-use vt100::Parser;
-use vt100::Screen;
 
 pub const TERMINAL_PANEL_ID: &str = "terminal.panel";
+const DEFAULT_SCROLLBACK_LINES: usize = 16_384;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TerminalSnapshot {
@@ -55,55 +65,192 @@ pub struct TerminalSession {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
-    parser: Parser,
-    viewport: TerminalViewport,
+    terminal: TerminalBuffer,
     output_rx: Receiver<Vec<u8>>,
     status: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct TerminalViewport {
-    total_lines: usize,
-    viewport_top: usize,
-    viewport_height: usize,
+struct TerminalBuffer {
+    term: Term<SessionEventListener>,
+    event_state: SessionEventState,
 }
 
-impl TerminalViewport {
-    fn viewport_height(self) -> usize {
-        self.viewport_height
+#[derive(Clone, Default)]
+struct SessionEventState {
+    title: Arc<Mutex<Option<String>>>,
+}
+
+#[derive(Clone, Default)]
+struct SessionEventListener {
+    state: SessionEventState,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TerminalDimensions {
+    rows: u16,
+    cols: u16,
+}
+
+impl TerminalDimensions {
+    const fn new(rows: u16, cols: u16) -> Self {
+        Self { rows, cols }
+    }
+}
+
+impl Dimensions for TerminalDimensions {
+    fn total_lines(&self) -> usize {
+        self.screen_lines()
     }
 
-    fn max_viewport_top(self) -> usize {
-        self.total_lines.saturating_sub(self.viewport_height)
+    fn screen_lines(&self) -> usize {
+        usize::from(self.rows)
     }
 
-    fn set_viewport_top(self, viewport_top: usize) -> Self {
-        Self {
-            viewport_top: clamp_viewport_top(
-                viewport_top,
-                self.total_lines,
-                self.viewport_height,
-            ),
-            ..self
+    fn columns(&self) -> usize {
+        usize::from(self.cols)
+    }
+}
+
+impl EventListener for SessionEventListener {
+    fn send_event(&self, event: AlacrittyEvent) {
+        match event {
+            AlacrittyEvent::Title(title) => {
+                *lock_or_recover(&self.state.title) = Some(title);
+            }
+            AlacrittyEvent::ResetTitle => {
+                *lock_or_recover(&self.state.title) = None;
+            }
+            _ => {}
+        }
+    }
+}
+
+impl TerminalBuffer {
+    fn new(rows: u16, cols: u16, scrollback_lines: usize) -> Self {
+        let event_state = SessionEventState::default();
+        let listener = SessionEventListener {
+            state: event_state.clone(),
+        };
+        let term = Term::new(
+            Config {
+                scrolling_history: scrollback_lines,
+                ..Config::default()
+            },
+            &TerminalDimensions::new(rows, cols),
+            listener,
+        );
+
+        Self { term, event_state }
+    }
+
+    fn process_output(&mut self, bytes: &[u8]) {
+        let mut processor = Processor::<StdSyncHandler>::new();
+        processor.advance(&mut self.term, bytes);
+    }
+
+    fn resize(&mut self, rows: u16, cols: u16) {
+        self.term.resize(TerminalDimensions::new(rows, cols));
+    }
+
+    fn scroll_to_bottom(&mut self) {
+        self.term.scroll_display(Scroll::Bottom);
+    }
+
+    fn set_scrollback(&mut self, rows: usize) {
+        let requested_offset = rows.min(self.max_scrollback());
+        let current_offset = self.scrollback();
+
+        match requested_offset.cmp(&current_offset) {
+            Ordering::Greater => {
+                let delta = requested_offset.saturating_sub(current_offset);
+                self.term.scroll_display(Scroll::Delta(delta as i32));
+            }
+            Ordering::Less => {
+                let delta = current_offset.saturating_sub(requested_offset);
+                self.term.scroll_display(Scroll::Delta(-(delta as i32)));
+            }
+            Ordering::Equal => {}
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn with_height(self, viewport_height: usize) -> Self {
-        Self {
+    fn scrollback(&self) -> usize {
+        self.term.grid().display_offset()
+    }
+
+    fn max_scrollback(&self) -> usize {
+        self.term.total_lines().saturating_sub(self.term.screen_lines())
+    }
+
+    fn total_lines(&self) -> usize {
+        self.term.total_lines()
+    }
+
+    fn viewport_height(&self) -> usize {
+        self.term.screen_lines()
+    }
+
+    fn viewport_top(&self) -> usize {
+        self.total_lines()
+            .saturating_sub(self.viewport_height())
+            .saturating_sub(self.scrollback())
+    }
+
+    fn application_cursor(&self) -> bool {
+        self.term.mode().contains(TermMode::APP_CURSOR)
+    }
+
+    fn title(&self) -> String {
+        lock_or_recover(&self.event_state.title)
+            .clone()
+            .filter(|title| !title.trim().is_empty())
+            .unwrap_or_else(|| "Terminal".to_owned())
+    }
+
+    fn snapshot(
+        &self,
+        shell_name: String,
+        cwd: String,
+        status: String,
+    ) -> TerminalSnapshot {
+        let rows = self.term.screen_lines();
+        let cols = self.term.columns();
+        let total_lines = self.total_lines();
+        let viewport_height = self.viewport_height();
+        let scrollback = self.scrollback();
+        let viewport_top = self.viewport_top();
+        let content = self.term.renderable_content();
+        let cursor_row = u16::try_from(content.cursor.point.line.0.max(0)).unwrap_or(0);
+        let cursor_col = u16::try_from(content.cursor.point.column.0).unwrap_or(0);
+        let cursor_hidden = content.cursor.shape == CursorShape::Hidden;
+        let application_cursor = content.mode.contains(TermMode::APP_CURSOR);
+        let (visible_cells, visible_lines) = render_visible_content(
+            content.display_iter,
+            content.display_offset,
+            content.colors,
+            rows,
+            cols,
+        );
+
+        TerminalSnapshot {
+            shell_name,
+            cwd,
+            status,
+            title: self.title(),
+            rows: u16::try_from(rows).unwrap_or(u16::MAX),
+            cols: u16::try_from(cols).unwrap_or(u16::MAX),
+            cursor_row,
+            cursor_col,
+            cursor_hidden,
+            application_cursor,
+            total_lines,
+            viewport_top,
             viewport_height,
-            ..self
+            can_scroll_up: viewport_top > 0,
+            can_scroll_down: scrollback > 0,
+            scrollback,
+            visible_cells,
+            visible_lines,
         }
-        .set_viewport_top(self.viewport_top)
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn jump_to_bottom(self) -> Self {
-        self.set_viewport_top(self.max_viewport_top())
-    }
-
-    fn scrollback_offset(self) -> usize {
-        self.max_viewport_top().saturating_sub(self.viewport_top)
     }
 }
 
@@ -157,12 +304,7 @@ impl TerminalSession {
             master: pair.master,
             writer,
             child,
-            parser: Parser::new(40, 120, 16_384),
-            viewport: TerminalViewport {
-                total_lines: 40,
-                viewport_top: 0,
-                viewport_height: 40,
-            },
+            terminal: TerminalBuffer::new(40, 120, DEFAULT_SCROLLBACK_LINES),
             output_rx,
             status: "running".to_owned(),
         })
@@ -170,9 +312,8 @@ impl TerminalSession {
 
     pub fn refresh(&mut self) {
         while let Ok(chunk) = self.output_rx.try_recv() {
-            self.parser.process(&chunk);
+            self.terminal.process_output(&chunk);
         }
-        self.sync_viewport_from_parser();
 
         match self.child.try_wait() {
             Ok(Some(status)) => {
@@ -193,6 +334,7 @@ impl TerminalSession {
     }
 
     pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.terminal.scroll_to_bottom();
         self.writer
             .write_all(bytes)
             .map_err(|error| format!("write failed: {error}"))?;
@@ -203,105 +345,75 @@ impl TerminalSession {
     }
 
     pub fn application_cursor(&self) -> bool {
-        self.parser.screen().application_cursor()
+        self.terminal.application_cursor()
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) -> Result<(), String> {
-        self.parser.set_size(rows, cols);
-        let result = self
-            .master
+        self.terminal.resize(rows, cols);
+        self.master
             .resize(PtySize {
                 rows,
                 cols,
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|error| format!("resize failed: {error}"));
-        self.sync_viewport_from_parser();
-        result
+            .map_err(|error| format!("resize failed: {error}"))
     }
 
     pub fn set_scrollback(&mut self, rows: usize) {
-        self.sync_viewport_from_parser();
-        let viewport_top = self.max_viewport_top().saturating_sub(
-            clamp_scrollback_offset(rows, self.max_safe_scrollback()),
-        );
-        self.set_viewport_top(viewport_top);
+        self.terminal.set_scrollback(rows);
     }
 
     pub fn scrollback(&self) -> usize {
-        self.viewport.scrollback_offset()
+        self.terminal.scrollback()
     }
 
     pub fn max_safe_scrollback(&self) -> usize {
-        self.viewport.viewport_height()
+        self.terminal.max_scrollback()
     }
 
     pub fn total_lines(&self) -> usize {
-        self.viewport.total_lines
+        self.terminal.total_lines()
     }
 
     pub fn viewport_top(&self) -> usize {
-        self.viewport.viewport_top
+        self.terminal.viewport_top()
     }
 
     pub fn viewport_height(&self) -> usize {
-        self.viewport.viewport_height()
+        self.terminal.viewport_height()
     }
 
     pub fn max_viewport_top(&self) -> usize {
-        self.viewport.max_viewport_top()
+        self.total_lines().saturating_sub(self.viewport_height())
     }
 
     pub fn set_viewport_top(&mut self, viewport_top: usize) {
-        self.viewport = clamp_viewport_for_parser(
-            self.viewport.total_lines,
-            self.viewport.viewport_height,
-            viewport_top,
-        );
-        self.parser.set_scrollback(self.viewport.scrollback_offset());
+        let display_offset = self
+            .max_viewport_top()
+            .saturating_sub(viewport_top.min(self.max_viewport_top()));
+        self.set_scrollback(display_offset);
     }
 
     pub fn snapshot(&self) -> TerminalSnapshot {
-        let screen = self.parser.screen();
-        let (rows, cols) = screen.size();
-        let (cursor_row, cursor_col) = screen.cursor_position();
-        let current_scrollback = screen.scrollback();
-        let viewport = self.viewport;
-        TerminalSnapshot {
-            shell_name: self.shell_name.clone(),
-            cwd: self.cwd.clone(),
-            status: self.status.clone(),
-            title: if screen.title().is_empty() {
-                "Terminal".to_owned()
-            } else {
-                screen.title().to_owned()
-            },
-            rows,
-            cols,
-            cursor_row,
-            cursor_col,
-            cursor_hidden: screen.hide_cursor(),
-            application_cursor: screen.application_cursor(),
-            total_lines: viewport.total_lines,
-            viewport_top: viewport.viewport_top,
-            viewport_height: viewport.viewport_height(),
-            can_scroll_up: viewport.viewport_top > 0,
-            can_scroll_down: current_scrollback > 0,
-            scrollback: current_scrollback,
-            visible_cells: render_visible_cells(screen, rows, cols),
-            visible_lines: render_visible_lines(screen, rows, cols),
-        }
-    }
-
-    fn sync_viewport_from_parser(&mut self) {
-        self.viewport = snapshot_viewport_from_parser(&mut self.parser);
+        self.terminal.snapshot(
+            self.shell_name.clone(),
+            self.cwd.clone(),
+            self.status.clone(),
+        )
     }
 }
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         let _result = self.child.kill();
+    }
+}
+
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
     }
 }
 
@@ -323,74 +435,74 @@ fn spawn_output_reader(reader: Box<dyn Read + Send>, sender: Sender<Vec<u8>>) {
     });
 }
 
-fn render_visible_lines(screen: &Screen, rows: u16, cols: u16) -> Vec<String> {
-    (0..rows)
-        .map(|row| render_visible_line(screen, row, cols))
-        .collect()
-}
+fn render_visible_content(
+    display_iter: alacritty_terminal::grid::GridIterator<'_, AlacrittyCell>,
+    display_offset: usize,
+    colors: &Colors,
+    rows: usize,
+    cols: usize,
+) -> (Vec<Vec<TerminalCell>>, Vec<String>) {
+    let mut visible_cells = vec![vec![blank_cell(None, None); cols]; rows];
 
-fn render_visible_cells(screen: &Screen, rows: u16, cols: u16) -> Vec<Vec<TerminalCell>> {
-    (0..rows)
-        .map(|row| render_visible_row(screen, row, cols))
-        .collect()
-}
-
-fn render_visible_line(screen: &Screen, row: u16, cols: u16) -> String {
-    let mut line = String::new();
-    for col in 0..cols {
-        let Some(cell) = screen.cell(row, col) else {
-            line.push(' ');
+    for Indexed { point, cell } in display_iter {
+        let Some(viewport_point) = term::point_to_viewport(display_offset, point) else {
             continue;
         };
 
-        if cell.is_wide_continuation() {
+        if viewport_point.line >= rows || viewport_point.column.0 >= cols {
             continue;
         }
 
-        if cell.has_contents() {
-            line.push_str(&cell.contents());
-        } else {
-            line.push(' ');
-        }
-    }
-    line
-}
-
-fn render_visible_row(screen: &Screen, row: u16, cols: u16) -> Vec<TerminalCell> {
-    let mut rendered = Vec::with_capacity(cols as usize);
-
-    for col in 0..cols {
-        let Some(cell) = screen.cell(row, col) else {
-            rendered.push(blank_cell(None, None));
-            continue;
-        };
-
-        if cell.is_wide_continuation() {
+        if cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
             continue;
         }
 
-        let mut foreground = color_to_hex(cell.fgcolor());
-        let mut background = color_to_hex(cell.bgcolor());
-        if cell.inverse() {
-            std::mem::swap(&mut foreground, &mut background);
-        }
-
-        let text = if cell.has_contents() {
-            cell.contents()
-        } else {
-            " ".to_owned()
-        };
-
-        rendered.push(TerminalCell {
-            text,
-            foreground,
-            background,
-            bold: cell.bold(),
-            underline: cell.underline(),
-        });
+        visible_cells[viewport_point.line][viewport_point.column.0] = render_cell(cell, colors);
     }
 
-    rendered
+    let visible_lines = visible_cells
+        .iter()
+        .map(|row| {
+            let mut rendered = String::new();
+            for cell in row {
+                rendered.push_str(&cell.text);
+            }
+            rendered
+        })
+        .collect();
+
+    (visible_cells, visible_lines)
+}
+
+fn render_cell(cell: &AlacrittyCell, colors: &Colors) -> TerminalCell {
+    let mut foreground = color_to_hex(cell.fg, colors);
+    let mut background = color_to_hex(cell.bg, colors);
+    if cell.flags.contains(Flags::INVERSE) {
+        std::mem::swap(&mut foreground, &mut background);
+    }
+
+    TerminalCell {
+        text: visible_cell_text(cell),
+        foreground,
+        background,
+        bold: cell.flags.intersects(Flags::BOLD | Flags::DIM_BOLD),
+        underline: cell.flags.intersects(Flags::ALL_UNDERLINES),
+    }
+}
+
+fn visible_cell_text(cell: &AlacrittyCell) -> String {
+    if cell.flags.contains(Flags::HIDDEN) {
+        return " ".to_owned();
+    }
+
+    let mut text = String::new();
+    text.push(cell.c);
+    if let Some(zerowidth) = cell.zerowidth() {
+        for character in zerowidth {
+            text.push(*character);
+        }
+    }
+    text
 }
 
 fn blank_cell(foreground: Option<u32>, background: Option<u32>) -> TerminalCell {
@@ -403,13 +515,53 @@ fn blank_cell(foreground: Option<u32>, background: Option<u32>) -> TerminalCell 
     }
 }
 
-fn color_to_hex(color: Color) -> Option<u32> {
+fn color_to_hex(color: Color, colors: &Colors) -> Option<u32> {
     match color {
-        Color::Default => None,
-        Color::Rgb(red, green, blue) => {
-            Some((u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue))
-        }
-        Color::Idx(index) => Some(ansi_index_to_hex(index)),
+        Color::Named(named) => colors[named]
+            .map(rgb_to_hex)
+            .or_else(|| named_color_to_hex(named)),
+        Color::Spec(rgb) => Some(rgb_to_hex(rgb)),
+        Color::Indexed(index) => colors[index as usize]
+            .map(rgb_to_hex)
+            .or_else(|| Some(ansi_index_to_hex(index))),
+    }
+}
+
+fn rgb_to_hex(rgb: Rgb) -> u32 {
+    (u32::from(rgb.r) << 16) | (u32::from(rgb.g) << 8) | u32::from(rgb.b)
+}
+
+fn named_color_to_hex(color: NamedColor) -> Option<u32> {
+    match color {
+        NamedColor::Black => Some(ansi_index_to_hex(0)),
+        NamedColor::Red => Some(ansi_index_to_hex(1)),
+        NamedColor::Green => Some(ansi_index_to_hex(2)),
+        NamedColor::Yellow => Some(ansi_index_to_hex(3)),
+        NamedColor::Blue => Some(ansi_index_to_hex(4)),
+        NamedColor::Magenta => Some(ansi_index_to_hex(5)),
+        NamedColor::Cyan => Some(ansi_index_to_hex(6)),
+        NamedColor::White => Some(ansi_index_to_hex(7)),
+        NamedColor::BrightBlack => Some(ansi_index_to_hex(8)),
+        NamedColor::BrightRed => Some(ansi_index_to_hex(9)),
+        NamedColor::BrightGreen => Some(ansi_index_to_hex(10)),
+        NamedColor::BrightYellow => Some(ansi_index_to_hex(11)),
+        NamedColor::BrightBlue => Some(ansi_index_to_hex(12)),
+        NamedColor::BrightMagenta => Some(ansi_index_to_hex(13)),
+        NamedColor::BrightCyan => Some(ansi_index_to_hex(14)),
+        NamedColor::BrightWhite => Some(ansi_index_to_hex(15)),
+        NamedColor::DimBlack => Some(ansi_index_to_hex(0)),
+        NamedColor::DimRed => Some(ansi_index_to_hex(1)),
+        NamedColor::DimGreen => Some(ansi_index_to_hex(2)),
+        NamedColor::DimYellow => Some(ansi_index_to_hex(3)),
+        NamedColor::DimBlue => Some(ansi_index_to_hex(4)),
+        NamedColor::DimMagenta => Some(ansi_index_to_hex(5)),
+        NamedColor::DimCyan => Some(ansi_index_to_hex(6)),
+        NamedColor::DimWhite => Some(ansi_index_to_hex(7)),
+        NamedColor::Foreground
+        | NamedColor::Background
+        | NamedColor::Cursor
+        | NamedColor::BrightForeground
+        | NamedColor::DimForeground => None,
     }
 }
 
@@ -460,75 +612,6 @@ fn ansi_grayscale_color(index: u8) -> u32 {
     (u32::from(value) << 16) | (u32::from(value) << 8) | u32::from(value)
 }
 
-fn clamp_scrollback_offset(rows: usize, max_safe_rows: usize) -> usize {
-    rows.min(max_safe_rows)
-}
-
-fn clamp_viewport_top(
-    viewport_top: usize,
-    total_lines: usize,
-    viewport_height: usize,
-) -> usize {
-    viewport_top.min(total_lines.saturating_sub(viewport_height))
-}
-
-fn clamp_viewport_for_parser(
-    total_lines: usize,
-    viewport_height: usize,
-    requested_viewport_top: usize,
-) -> TerminalViewport {
-    let live_bottom_top = total_lines.saturating_sub(viewport_height);
-    let requested_viewport_top =
-        clamp_viewport_top(requested_viewport_top, total_lines, viewport_height);
-    let requested_scrollback = live_bottom_top.saturating_sub(requested_viewport_top);
-    let safe_scrollback = requested_scrollback.min(viewport_height);
-    let actual_viewport_top = live_bottom_top.saturating_sub(safe_scrollback);
-
-    TerminalViewport {
-        total_lines,
-        viewport_top: actual_viewport_top,
-        viewport_height,
-    }
-}
-
-fn snapshot_viewport_from_parser(parser: &mut Parser) -> TerminalViewport {
-    let current_scrollback = parser.screen().scrollback();
-    parser.set_scrollback(usize::MAX);
-    let max_scrollback = parser.screen().scrollback();
-    parser.set_scrollback(0);
-
-    let bottom_screen = parser.screen();
-    let (rows, cols) = bottom_screen.size();
-    let (cursor_row, _) = bottom_screen.cursor_position();
-    let viewport_height = usize::from(rows);
-    let total_lines = max_scrollback
-        .saturating_add(visible_content_lines(bottom_screen, cols, cursor_row));
-
-    parser.set_scrollback(current_scrollback);
-    let viewport_top = total_lines
-        .saturating_sub(viewport_height)
-        .saturating_sub(current_scrollback);
-
-    TerminalViewport {
-        total_lines,
-        viewport_top,
-        viewport_height,
-    }
-}
-
-fn visible_content_lines(screen: &Screen, cols: u16, cursor_row: u16) -> usize {
-    let last_non_empty_line = screen
-        .rows(0, cols)
-        .enumerate()
-        .filter_map(|(row_index, line)| {
-            (!line.trim_end_matches(' ').is_empty()).then_some(row_index + 1)
-        })
-        .last()
-        .unwrap_or(0);
-
-    last_non_empty_line.max(usize::from(cursor_row).saturating_add(1))
-}
-
 #[cfg(windows)]
 fn local_shell_candidates() -> &'static [&'static str] {
     &["pwsh.exe", "powershell.exe", "cmd.exe"]
@@ -566,12 +649,14 @@ fn configure_command_builder(_builder: &mut CommandBuilder, _shell: &str) {}
 #[cfg(test)]
 mod tests {
     use super::{
-        TERMINAL_PANEL_ID, TerminalViewport, ansi_index_to_hex, clamp_scrollback_offset,
-        clamp_viewport_for_parser, clamp_viewport_top, color_to_hex,
-        snapshot_viewport_from_parser, terminal_panel_descriptor,
+        DEFAULT_SCROLLBACK_LINES, TERMINAL_PANEL_ID, TerminalBuffer, ansi_index_to_hex,
+        color_to_hex, terminal_panel_descriptor,
+    };
+    use alacritty_terminal::{
+        term::color::Colors,
+        vte::ansi::{Color, NamedColor, Rgb},
     };
     use panel::DockPlacement;
-    use vt100::{Color, Parser};
 
     #[test]
     fn terminal_panel_defaults_to_bottom_singleton() {
@@ -582,97 +667,59 @@ mod tests {
 
     #[test]
     fn maps_terminal_palette_indexes_to_rgb_hex() {
-        assert_eq!(color_to_hex(Color::Idx(1)), Some(0xcd3131));
+        let colors = Colors::default();
+
+        assert_eq!(color_to_hex(Color::Indexed(1), &colors), Some(0xcd3131));
+        assert_eq!(color_to_hex(Color::Named(NamedColor::Foreground), &colors), None);
+        assert_eq!(
+            color_to_hex(Color::Spec(Rgb { r: 0x12, g: 0x34, b: 0x56 }), &colors),
+            Some(0x123456)
+        );
         assert_eq!(ansi_index_to_hex(16), 0x000000);
         assert_eq!(ansi_index_to_hex(231), 0xffffff);
         assert_eq!(ansi_index_to_hex(244), 0x808080);
     }
 
     #[test]
-    fn scrollback_offset_is_clamped_to_visible_row_count() {
-        assert_eq!(clamp_scrollback_offset(0, 40), 0);
-        assert_eq!(clamp_scrollback_offset(8, 40), 8);
-        assert_eq!(clamp_scrollback_offset(120, 40), 40);
+    fn scrollback_reaches_full_history_not_viewport_height() {
+        let mut terminal = TerminalBuffer::new(3, 20, DEFAULT_SCROLLBACK_LINES);
+        terminal.process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\nseven\r\neight");
+
+        assert_eq!(terminal.total_lines(), 8);
+        assert_eq!(terminal.viewport_height(), 3);
+        assert_eq!(terminal.max_scrollback(), 5);
+
+        terminal.set_scrollback(usize::MAX);
+
+        assert_eq!(terminal.scrollback(), 5);
+        assert_eq!(terminal.viewport_top(), 0);
     }
 
     #[test]
-    fn viewport_offset_is_clamped_to_total_history_not_viewport_height() {
-        assert_eq!(clamp_viewport_top(0, 80, 20), 0);
-        assert_eq!(clamp_viewport_top(12, 80, 20), 12);
-        assert_eq!(clamp_viewport_top(75, 80, 20), 60);
+    fn resize_uses_total_history_for_scroll_range() {
+        let mut terminal = TerminalBuffer::new(3, 20, DEFAULT_SCROLLBACK_LINES);
+        terminal.process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\nseven\r\neight");
+
+        assert_eq!(terminal.max_scrollback(), 5);
+
+        terminal.resize(5, 20);
+
+        assert_eq!(terminal.total_lines(), 8);
+        assert_eq!(terminal.viewport_height(), 5);
+        assert_eq!(terminal.max_scrollback(), 3);
     }
 
     #[test]
-    fn jump_to_bottom_clears_viewport_offset() {
-        let state = TerminalViewport {
-            total_lines: 120,
-            viewport_top: 40,
-            viewport_height: 20,
-        };
+    fn scrolling_back_to_bottom_clears_display_offset() {
+        let mut terminal = TerminalBuffer::new(3, 20, DEFAULT_SCROLLBACK_LINES);
+        terminal.process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix");
+        terminal.set_scrollback(usize::MAX);
 
-        assert_eq!(state.jump_to_bottom().viewport_top, 100);
-        assert!(!state.jump_to_bottom().is_away_from_bottom());
-    }
+        assert!(terminal.scrollback() > 0);
 
-    #[test]
-    fn resize_keeps_viewport_top_in_bounds() {
-        let state = TerminalViewport {
-            total_lines: 120,
-            viewport_top: 95,
-            viewport_height: 20,
-        };
+        terminal.scroll_to_bottom();
 
-        assert_eq!(state.with_height(30).viewport_top, 90);
-    }
-
-    #[test]
-    fn parser_viewport_is_clamped_to_one_visible_page() {
-        let viewport = clamp_viewport_for_parser(200, 20, 100);
-
-        assert_eq!(viewport.viewport_top, 160);
-        assert_eq!(viewport.scrollback_offset(), 20);
-    }
-
-    #[test]
-    fn snapshot_total_lines_tracks_terminal_content_across_resize() {
-        let mut parser = Parser::new(4, 20, 64);
-        parser.process(b"one\r\ntwo\r\nthree");
-        let initial = snapshot_viewport_from_parser(&mut parser);
-
-        parser.set_size(8, 20);
-        let resized = snapshot_viewport_from_parser(&mut parser);
-
-        assert_eq!(initial.total_lines, 3);
-        assert_eq!(resized.total_lines, 3);
-        assert_eq!(resized.viewport_height, 8);
-    }
-
-    #[test]
-    fn snapshot_total_lines_is_stable_when_scrolled_up() {
-        let mut parser = Parser::new(3, 20, 64);
-        parser.process(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
-        let bottom = snapshot_viewport_from_parser(&mut parser);
-
-        parser.set_scrollback(2);
-        let scrolled_up = snapshot_viewport_from_parser(&mut parser);
-
-        assert_eq!(bottom.total_lines, 5);
-        assert_eq!(scrolled_up.total_lines, 5);
-        assert_eq!(scrolled_up.viewport_top, 0);
-    }
-
-    #[test]
-    fn snapshot_total_lines_does_not_double_count_scrollback_rows() {
-        let mut parser = Parser::new(3, 20, 64);
-        parser.process(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix");
-        parser.process(b"\x1b[2J\x1b[H");
-        let bottom = snapshot_viewport_from_parser(&mut parser);
-
-        parser.set_scrollback(3);
-        let scrolled_up = snapshot_viewport_from_parser(&mut parser);
-
-        assert_eq!(bottom.total_lines, 4);
-        assert_eq!(scrolled_up.total_lines, 4);
-        assert_eq!(scrolled_up.viewport_top, 0);
+        assert_eq!(terminal.scrollback(), 0);
+        assert_eq!(terminal.viewport_top(), 3);
     }
 }

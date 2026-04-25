@@ -37,7 +37,7 @@ This workspace provides a Zed-style workbench kernel in Rust. It keeps shell con
 5. `dock::DockLayoutState` records which panel instance is attached to each dock and which tab is active.
 6. `app_ui` renders `gpui_component::TitleBar` above the workbench body, so drag and window controls are platform hit areas rather than fake buttons.
 7. `ui` renders dock hosts from runtime state, keeps the bottom dock host separate from the status toolbar, and renders terminal content as a fixed viewport instead of adding a second transcript scroll container.
-8. `app_ui` maps wheel and page-navigation input into terminal viewport operations, preserves per-tab terminal viewport state, and clamps parser scrollback to the safe range supported by `vt100`.
+8. `app_ui` maps wheel and page-navigation input into terminal viewport operations, preserves per-tab terminal viewport state, and drives terminal history through the native `alacritty_terminal` display offset model.
 9. The status toolbar renders contribution items only and does not render debug placeholder strings.
 10. `welcome` contributes the initial singleton center panel and command action used to validate the full open/focus/serialize path.
 

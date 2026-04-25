@@ -33,6 +33,11 @@ struct TerminalTabRuntime {
     pending_display_offset: Rc<Cell<Option<usize>>>,
 }
 
+const TERMINAL_HEADER_HEIGHT: f32 = 30.;
+const TERMINAL_LINE_HEIGHT: f32 = 18.;
+const TERMINAL_VERTICAL_PADDING: f32 = 16.;
+const MIN_TERMINAL_ROWS: usize = 8;
+
 pub struct AppFrame {
     title: &'static str,
     pub workspace: WorkspaceController,
@@ -129,7 +134,7 @@ impl Render for AppFrame {
                 can_scroll_up: snapshot.can_scroll_up,
                 can_scroll_down: snapshot.can_scroll_down,
                 away_from_bottom: snapshot.can_scroll_down,
-                scrollbar_line_height: px(18.),
+                scrollbar_line_height: px(TERMINAL_LINE_HEIGHT),
                 pending_display_offset: tab.pending_display_offset.clone(),
                 visible_cells: snapshot
                     .visible_cells
@@ -394,7 +399,7 @@ impl AppFrame {
     }
 
     fn resize_terminal_if_needed(&mut self) {
-        let rows = ((f32::from(self.bottom_dock_height) - 12.) / 18.).max(8.) as u16;
+        let rows = terminal_rows_for_bottom_dock_height(self.bottom_dock_height) as u16;
         let cols = 120;
         for tab in &mut self.terminal_tabs {
             let _result = tab.session.resize(rows, cols);
@@ -475,7 +480,7 @@ impl AppFrame {
     }
 
     fn visible_terminal_rows(&self) -> usize {
-        ((f32::from(self.bottom_dock_height) - 12.) / 18.).max(8.) as usize
+        terminal_rows_for_bottom_dock_height(self.bottom_dock_height)
     }
 
     fn activate_terminal(&mut self, tab_id: &str) -> bool {
@@ -763,8 +768,17 @@ fn pixels_to_terminal_lines(delta: gpui::Pixels) -> i32 {
     if pixels.abs() < 1.0 {
         0
     } else {
-        (pixels / 18.).round() as i32
+        (pixels / TERMINAL_LINE_HEIGHT).round() as i32
     }
+}
+
+fn terminal_rows_for_bottom_dock_height(bottom_dock_height: gpui::Pixels) -> usize {
+    let viewport_height = (f32::from(bottom_dock_height)
+        - TERMINAL_HEADER_HEIGHT
+        - TERMINAL_VERTICAL_PADDING)
+        .max(TERMINAL_LINE_HEIGHT * MIN_TERMINAL_ROWS as f32);
+
+    (viewport_height / TERMINAL_LINE_HEIGHT).floor() as usize
 }
 
 fn terminal_viewport_lines_for_key_event(event: &KeyDownEvent, visible_rows: usize) -> Option<i32> {
@@ -947,7 +961,7 @@ fn window_control_button(
             }
         })
         .window_control_area(control_area)
-        .child(Icon::new(icon).small())
+        .child(Icon::new(icon).large().text_color(rgb(theme.window_control_foreground)))
 }
 
 #[cfg(test)]
@@ -957,6 +971,7 @@ mod tests {
         next_viewport_top_before_input, scroll_delta_to_display_offset,
         scroll_delta_to_viewport_top,
     };
+    use gpui::px;
 
     #[test]
     fn page_navigation_uses_total_history_bounds() {
@@ -989,6 +1004,12 @@ mod tests {
         assert_eq!(scroll_delta_to_display_offset(0, 20, 8), 8);
         assert_eq!(scroll_delta_to_display_offset(8, 20, -8), 0);
         assert_eq!(scroll_delta_to_display_offset(8, 20, i32::MIN), 0);
+    }
+
+    #[test]
+    fn terminal_rows_subtract_header_and_padding() {
+        assert_eq!(super::terminal_rows_for_bottom_dock_height(px(200.)), 8);
+        assert_eq!(super::terminal_rows_for_bottom_dock_height(px(260.)), 11);
     }
 
     #[test]
