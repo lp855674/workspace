@@ -1,3 +1,5 @@
+pub mod workbench_controls;
+
 use gpui::{
     AnyElement, App, CursorStyle, FocusHandle, FontWeight, IntoElement, KeyDownEvent,
     ParentElement, Pixels, Point, Render, ScrollWheelEvent, StatefulInteractiveElement, Window,
@@ -7,12 +9,16 @@ use gpui_component::{
     Icon, IconName, Sizable,
     list::ListItem,
     scroll::{ScrollableElement, Scrollbar, ScrollbarHandle, ScrollbarShow},
-    tooltip::Tooltip,
     tree::{TreeEntry, tree},
 };
 use status_bar::StatusBarItem;
 use std::cell::Cell;
 use std::rc::Rc;
+pub use workbench_controls::{
+    WorkbenchButtonVariant, button_variant_colors, corner_toolbar_group, header_icon_button,
+    terminal_tab_close_button, titlebar_icon_button, titlebar_label, titlebar_tab_chip,
+    toolbar_icon_button, toolbar_labeled_button, toolbar_static_icon, StatusButtonIcon,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ShellTheme {
@@ -278,6 +284,7 @@ pub fn render_shell(
         .flex()
         .flex_col()
         .bg(rgb(theme.app_background))
+        .font_family(".ZedSans")
         .text_color(gpui::white())
         .child(
             div()
@@ -311,37 +318,15 @@ fn render_sidebar(sidebar: ShellSidebar, theme: ShellTheme) -> impl IntoElement 
         .bg(rgb(theme.sidebar_background))
         .border_r_1()
         .border_color(rgb(theme.border))
-        .child(
-            div()
-                .w_full()
-                .px_3()
-                .pt_3()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(theme.sidebar_foreground))
-                        .child(sidebar.workspace_name),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(theme.sidebar_muted))
-                        .child(sidebar.project_root),
-                ),
-        )
         .child(div().flex_1().min_h_0().px_2().py_2().child(sidebar.tree))
         .child(
             div()
                 .w_full()
-                .px_3()
-                .pb_3()
+                .px_2()
+                .pb_2()
                 .flex()
-                .justify_between()
                 .items_center()
+                .justify_start()
                 .text_xs()
                 .text_color(rgb(theme.sidebar_muted))
                 .child("Explorer"),
@@ -464,8 +449,8 @@ fn render_dock_header(
     theme: ShellTheme,
 ) -> impl IntoElement {
     let header = div()
-        .h(px(30.))
-        .px_1p5()
+        .h(px(26.))
+        .px_1()
         .flex()
         .items_center()
         .justify_between()
@@ -563,7 +548,7 @@ fn render_terminal_session(terminal: ShellTerminalSession, theme: ShellTheme) ->
         div()
             .relative()
             .size_full()
-            .font_family("Consolas")
+            .font_family(".ZedMono")
             .text_xs()
             .line_height(px(18.))
             .text_color(rgb(theme.sidebar_foreground))
@@ -685,7 +670,6 @@ fn render_status_toolbar(
     theme: ShellTheme,
 ) -> impl IntoElement {
     let sidebar_interactions = interactions.on_action.clone();
-    let right_interactions = interactions.on_action.clone();
     let shell_interactions = interactions.on_action.clone();
 
     div()
@@ -702,23 +686,23 @@ fn render_status_toolbar(
                 .h_full()
                 .flex()
                 .items_center()
-                .px_3()
-                .gap_1()
+                .px_2()
+                .gap_2()
                 .border_r_1()
                 .border_color(rgb(theme.border))
-                .child(toolbar_button(
-                    "status-toggle-sidebar",
-                    if status.sidebar_visible {
-                        IconName::PanelLeftOpen
-                    } else {
-                        IconName::PanelLeftClose
-                    },
-                    "Toggle Explorer",
-                    status.sidebar_visible,
-                    ShellAction::ToggleSidebar,
-                    sidebar_interactions,
+                .child(corner_toolbar_group(
+                    vec![toolbar_icon_button(
+                        "status-toggle-sidebar",
+                        StatusButtonIcon::Sidebar,
+                        "Toggle Explorer",
+                        status.sidebar_visible,
+                        Rc::new(move |window, cx| {
+                            sidebar_interactions(&ShellAction::ToggleSidebar, window, cx);
+                        }),
+                        theme,
+                    )
+                    .into_any_element()],
                     theme,
-                    None,
                 )),
         )
         .child(
@@ -727,7 +711,7 @@ fn render_status_toolbar(
                 .flex()
                 .flex_1()
                 .items_center()
-                .px_3()
+                .px_2()
                 .gap_1()
                 .children(status.items.into_iter().map(|item| {
                     toolbar_static_icon("status-item", IconName::Info, item.text, theme)
@@ -739,33 +723,36 @@ fn render_status_toolbar(
                 .flex()
                 .items_center()
                 .px_2()
-                .gap_1()
+                .gap_2()
                 .border_l_1()
                 .border_color(rgb(theme.border))
-                .child(toolbar_button(
-                    "status-open-local-shell",
-                    IconName::SquareTerminal,
-                    "Open Local Shell",
-                    status.local_shell_active,
-                    ShellAction::OpenLocalShell,
-                    shell_interactions,
+                .child(corner_toolbar_group(
+                    vec![
+                        toolbar_icon_button(
+                            "status-open-local-shell",
+                            StatusButtonIcon::Terminal,
+                            "Open Local Shell",
+                            status.local_shell_active,
+                            Rc::new(move |window, cx| {
+                                shell_interactions(&ShellAction::OpenLocalShell, window, cx);
+                            }),
+                            theme,
+                        )
+                        .into_any_element(),
+                        toolbar_icon_button(
+                            "status-toggle-right",
+                            StatusButtonIcon::RightDock,
+                            "Toggle Right Dock",
+                            status.right_visible,
+                            Rc::new(move |window, cx| {
+                                (interactions.on_action)(&ShellAction::ToggleRightDock, window, cx);
+                            }),
+                            theme,
+                        )
+                        .into_any_element(),
+                    ],
                     theme,
-                    Some("pwsh"),
                 ))
-                .child(toolbar_button(
-                    "status-toggle-right",
-                    if status.right_visible {
-                        IconName::PanelRightOpen
-                    } else {
-                        IconName::PanelRightClose
-                    },
-                    "Toggle Right Dock",
-                    status.right_visible,
-                    ShellAction::ToggleRightDock,
-                    right_interactions,
-                    theme,
-                    None,
-                )),
         )
 }
 
@@ -781,18 +768,18 @@ fn render_terminal_header_actions(
     div()
         .flex()
         .items_center()
-        .gap_1()
+        .gap_0p5()
         .when_some(
             terminal.filter(|terminal| terminal.away_from_bottom && terminal.can_scroll_down),
             |this, terminal| {
                 this.child(
                     div()
-                        .h(px(28.))
-                        .px_2()
+                        .h(px(24.))
+                        .px_1p5()
                         .flex()
                         .items_center()
                         .gap_1()
-                        .rounded(px(5.))
+                        .rounded(px(4.))
                         .border_1()
                         .border_color(rgb(theme.border))
                         .bg(rgb(theme.status_bar_button_active))
@@ -802,31 +789,38 @@ fn render_terminal_header_actions(
                                 .text_xs()
                                 .child(format!("{} lines up", terminal.scrollback)),
                         )
-                        .child(header_button(
+                        .child(header_icon_button(
                             "terminal-jump-bottom",
                             IconName::ChevronDown,
                             "Jump To Bottom",
-                            ShellAction::ScrollTerminalViewport(i32::MIN),
-                            jump_interactions,
+                            Rc::new(move |window, cx| {
+                                jump_interactions(
+                                    &ShellAction::ScrollTerminalViewport(i32::MIN),
+                                    window,
+                                    cx,
+                                );
+                            }),
                             theme,
                         )),
                 )
             },
         )
-        .child(header_button(
+        .child(header_icon_button(
             "terminal-new",
             IconName::Plus,
             "New Terminal",
-            ShellAction::SpawnTerminal,
-            spawn_interactions,
+            Rc::new(move |window, cx| {
+                spawn_interactions(&ShellAction::SpawnTerminal, window, cx);
+            }),
             theme,
         ))
-        .child(header_button(
+        .child(header_icon_button(
             "terminal-close",
             IconName::Close,
             "Close Terminal",
-            ShellAction::CloseTerminal,
-            close_interactions,
+            Rc::new(move |window, cx| {
+                close_interactions(&ShellAction::CloseTerminal, window, cx);
+            }),
             theme,
         ))
 }
@@ -863,37 +857,35 @@ fn render_terminal_tab(
     let tab_id = tab.id.clone();
     let close_tab_id = tab.id.clone();
 
+    let (background, border, foreground) = button_variant_colors(
+        if tab.active {
+            WorkbenchButtonVariant::Selected
+        } else {
+            WorkbenchButtonVariant::Subtle
+        },
+        theme,
+    );
+
     div()
         .id(("terminal-tab", index))
-        .h(px(22.))
-        .min_w(px(112.))
-        .max_w(px(220.))
-        .px_2()
+        .h(px(20.))
+        .min_w(px(92.))
+        .max_w(px(180.))
+        .px_1p5()
         .flex()
         .flex_shrink_0()
         .items_center()
         .gap_1()
-        .rounded_t(px(4.))
+        .rounded_t(px(3.))
         .border_1()
-        .border_color(if tab.active {
-            rgb(theme.status_bar_active)
-        } else {
-            rgb(theme.dock_header)
-        })
-        .bg(if tab.active {
-            rgb(theme.status_bar_button)
-        } else {
-            rgb(theme.dock_header)
-        })
-        .text_color(if tab.active {
-            rgb(theme.status_bar_active)
-        } else {
-            rgb(theme.status_bar_foreground)
-        })
+        .border_color(rgb(border))
+        .bg(rgb(background))
+        .text_color(rgb(foreground))
         .hover(move |style| {
             style
                 .bg(rgb(theme.status_bar_button_hover))
-                .text_color(rgb(theme.status_bar_active))
+                .border_color(rgb(theme.status_bar_active))
+                .text_color(rgb(theme.title_bar_foreground))
         })
         .cursor(CursorStyle::PointingHand)
         .on_click(move |_, window, cx| {
@@ -904,170 +896,23 @@ fn render_terminal_tab(
             );
         })
         .child(
-            Icon::new(IconName::SquareTerminal)
-                .small()
-                .text_color(if tab.active {
-                    rgb(theme.status_bar_active)
-                } else {
-                    rgb(theme.status_bar_foreground)
-                }),
-        )
-        .child(
             div()
                 .min_w_0()
                 .flex_1()
                 .overflow_hidden()
                 .text_xs()
+                .text_color(rgb(foreground))
                 .truncate()
                 .child(tab.title),
         )
-        .child(
-            div()
-                .id(("terminal-tab-close", index))
-                .h(px(16.))
-                .w(px(16.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(3.))
-                .text_color(if tab.active {
-                    rgb(theme.status_bar_active)
-                } else {
-                    rgb(theme.status_bar_foreground)
-                })
-                .hover(move |style| {
-                    style
-                        .bg(rgb(theme.status_bar_button_hover))
-                        .text_color(rgb(theme.status_bar_active))
-                })
-                .on_click(move |_, window, cx| {
-                    close_interactions(
-                        &ShellAction::CloseTerminalTab(close_tab_id.clone()),
-                        window,
-                        cx,
-                    );
-                })
-                .child(
-                    Icon::new(IconName::Close)
-                        .small()
-                        .text_color(if tab.active {
-                            rgb(theme.status_bar_active)
-                        } else {
-                            rgb(theme.status_bar_foreground)
-                        }),
-                ),
-        )
-}
-
-fn header_button(
-    id: &'static str,
-    icon: IconName,
-    tooltip: &'static str,
-    action: ShellAction,
-    on_action: Rc<dyn Fn(&ShellAction, &mut Window, &mut App)>,
-    theme: ShellTheme,
-) -> impl IntoElement {
-    div()
-        .id(id)
-        .h(px(28.))
-        .w(px(28.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(5.))
-        .border_1()
-        .border_color(rgb(theme.border))
-        .bg(rgb(theme.status_bar_button))
-        .text_color(rgb(theme.status_bar_active))
-        .hover(move |style| {
-            style
-                .bg(rgb(theme.status_bar_button_hover))
-                .text_color(rgb(theme.status_bar_active))
-        })
-        .cursor(CursorStyle::PointingHand)
-        .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
-        .on_click(move |_, window, cx| {
-            on_action(&action, window, cx);
-        })
-        .child(Icon::new(icon).large().text_color(rgb(theme.status_bar_active)))
-}
-
-fn toolbar_button(
-    id: &'static str,
-    icon: IconName,
-    tooltip: &'static str,
-    active: bool,
-    action: ShellAction,
-    on_action: Rc<dyn Fn(&ShellAction, &mut Window, &mut App)>,
-    theme: ShellTheme,
-    label: Option<&'static str>,
-) -> impl IntoElement {
-    div()
-        .id(id)
-        .h(px(24.))
-        .min_w(if label.is_some() { px(54.) } else { px(30.) })
-        .px_2()
-        .flex()
-        .items_center()
-        .justify_center()
-        .gap_1()
-        .rounded(px(4.))
-        .border_1()
-        .border_color(if active {
-            rgb(theme.border)
-        } else {
-            rgb(theme.status_bar_background)
-        })
-        .text_color(if active {
-            rgb(theme.status_bar_active)
-        } else {
-            rgb(theme.status_bar_foreground)
-        })
-        .bg(if active {
-            rgb(theme.status_bar_button_active)
-        } else {
-            rgb(theme.status_bar_button)
-        })
-        .hover(move |style| {
-            style
-                .bg(rgb(theme.status_bar_button_hover))
-                .text_color(rgb(theme.status_bar_active))
-        })
-        .cursor(CursorStyle::PointingHand)
-        .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
-        .on_click(move |_, window, cx| {
-            on_action(&action, window, cx);
-        })
-        .child(
-            Icon::new(icon).large().text_color(if active {
-                rgb(theme.status_bar_active)
-            } else {
-                rgb(theme.status_bar_foreground)
+        .child(terminal_tab_close_button(
+            index,
+            tab.active,
+            Rc::new(move |window, cx| {
+                close_interactions(&ShellAction::CloseTerminalTab(close_tab_id.clone()), window, cx);
             }),
-        )
-        .when_some(label, |this, label| {
-            this.child(div().text_xs().child(label))
-        })
-}
-
-fn toolbar_static_icon(
-    id: &'static str,
-    icon: IconName,
-    tooltip: impl Into<String>,
-    theme: ShellTheme,
-) -> impl IntoElement {
-    let tooltip = tooltip.into();
-    div()
-        .id(id)
-        .h(px(24.))
-        .w(px(28.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(4.))
-        .text_color(rgb(theme.status_bar_foreground))
-        .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
-        .child(Icon::new(icon).large().text_color(rgb(theme.status_bar_foreground)))
+            theme,
+        ))
 }
 
 fn render_resize_handle(target: ShellResizeTarget, theme: ShellTheme) -> impl IntoElement {

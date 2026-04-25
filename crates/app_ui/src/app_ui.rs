@@ -6,7 +6,7 @@ use gpui::{
     rgb,
 };
 use gpui_component::{
-    Icon, IconName, Sizable,
+    IconName,
     tree::{TreeItem, TreeState},
 };
 use keymap::KeyBinding;
@@ -20,7 +20,7 @@ use theme::ThemeDefinition;
 use ui::{
     ShellAction, ShellDockHost, ShellInteractions, ShellResizeTarget, ShellSidebar,
     ShellStatusToolbar, ShellTerminalSession, ShellTerminalTab, ShellTheme, ShellWorkspace,
-    render_file_tree, render_shell,
+    render_file_tree, render_shell, titlebar_icon_button, titlebar_label, titlebar_tab_chip,
 };
 use workspace::WorkspaceController;
 
@@ -31,6 +31,12 @@ struct TerminalTabRuntime {
     display_offset: usize,
     follow_output: bool,
     pending_display_offset: Rc<Cell<Option<usize>>>,
+}
+
+#[derive(Clone)]
+struct TitleBarTab {
+    label: String,
+    active: bool,
 }
 
 const TERMINAL_HEADER_HEIGHT: f32 = 30.;
@@ -157,10 +163,15 @@ impl Render for AppFrame {
             })
             .collect::<Vec<_>>();
         let workspace_meta = workspace_meta();
+        let title_bar_tabs = build_title_bar_tabs(
+            center_panel.as_deref(),
+            right_panel.as_deref(),
+            bottom_panel.as_deref(),
+        );
 
         let sidebar = ShellSidebar {
-            workspace_name: workspace_meta.name,
-            project_root: workspace_meta.root,
+            workspace_name: workspace_meta.name.clone(),
+            project_root: workspace_meta.root.clone(),
             visible: self.sidebar_visible,
             width: self.sidebar_width,
             tree: self
@@ -231,7 +242,13 @@ impl Render for AppFrame {
             .size_full()
             .flex()
             .flex_col()
-            .child(render_title_bar(self.title, window, shell_theme))
+            .child(render_platform_title_bar(
+                self.title,
+                &workspace_meta,
+                &title_bar_tabs,
+                window,
+                shell_theme,
+            ))
             .child(render_shell(
                 sidebar,
                 workspace,
@@ -648,8 +665,23 @@ fn workspace_meta() -> WorkspaceMeta {
         .and_then(Path::to_str)
         .unwrap_or("")
         .to_owned();
-
     WorkspaceMeta { name, root }
+}
+
+fn build_title_bar_tabs(
+    center_panel: Option<&str>,
+    _right_panel: Option<&str>,
+    _bottom_panel: Option<&str>,
+) -> Vec<TitleBarTab> {
+    center_panel
+        .filter(|label| !label.eq_ignore_ascii_case("terminal"))
+        .map(|label| {
+            vec![TitleBarTab {
+                label: label.to_owned(),
+                active: true,
+            }]
+        })
+        .unwrap_or_default()
 }
 
 fn panel_title(
@@ -877,7 +909,13 @@ fn shell_theme_from_definition(theme: &ThemeDefinition) -> ShellTheme {
     }
 }
 
-fn render_title_bar(title: &'static str, window: &Window, theme: ShellTheme) -> impl IntoElement {
+fn render_platform_title_bar(
+    _title: &'static str,
+    workspace_meta: &WorkspaceMeta,
+    tabs: &[TitleBarTab],
+    window: &Window,
+    theme: ShellTheme,
+) -> impl IntoElement {
     div()
         .h(px(36.))
         .w_full()
@@ -893,11 +931,31 @@ fn render_title_bar(title: &'static str, window: &Window, theme: ShellTheme) -> 
                 .flex()
                 .items_center()
                 .flex_1()
-                .px_3()
+                .gap_0p5()
+                .px_1p5()
                 .text_sm()
                 .text_color(rgb(theme.title_bar_foreground))
                 .window_control_area(WindowControlArea::Drag)
-                .child(title),
+                .child(titlebar_icon_button(
+                    "title-bar-menu",
+                    IconName::Menu,
+                    false,
+                    theme,
+                ))
+                .child(title_bar_workspace_identity(workspace_meta, theme))
+                .child(title_bar_divider(theme))
+                .child(
+                    div()
+                        .flex()
+                        .items_end()
+                        .gap_0p5()
+                        .pt_1()
+                        .children(
+                            tabs.iter().map(|tab| {
+                                titlebar_tab_chip(&tab.label, tab.active, theme).into_any_element()
+                            }),
+                        ),
+                ),
         )
         .child(
             div()
@@ -906,62 +964,97 @@ fn render_title_bar(title: &'static str, window: &Window, theme: ShellTheme) -> 
                 .items_center()
                 .flex_none()
                 .bg(rgb(theme.title_bar_background))
-                .child(window_control_button(
-                    "window-minimize",
-                    IconName::WindowMinimize,
-                    WindowControlArea::Min,
-                    theme,
-                ))
-                .child(window_control_button(
-                    "window-maximize",
-                    if window.is_maximized() {
-                        IconName::WindowRestore
-                    } else {
-                        IconName::WindowMaximize
-                    },
-                    WindowControlArea::Max,
-                    theme,
-                ))
-                .child(window_control_button(
-                    "window-close",
-                    IconName::WindowClose,
-                    WindowControlArea::Close,
-                    theme,
-                )),
+                .child(render_windows_window_controls(window, theme)),
         )
 }
 
-fn window_control_button(
+fn title_bar_workspace_identity(workspace_meta: &WorkspaceMeta, theme: ShellTheme) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_1p5()
+        .child(titlebar_label(&workspace_meta.name, theme))
+}
+
+fn title_bar_divider(theme: ShellTheme) -> impl IntoElement {
+    div()
+        .h(px(16.))
+        .w(px(1.))
+        .bg(rgb(theme.title_bar_border))
+}
+
+fn render_windows_window_controls(window: &Window, theme: ShellTheme) -> impl IntoElement {
+    div()
+        .id("windows-window-controls")
+        .font_family("Segoe Fluent Icons")
+        .flex()
+        .flex_row()
+        .justify_center()
+        .content_stretch()
+        .max_h(px(36.))
+        .min_h(px(36.))
+        .child(windows_caption_button(
+            "minimize",
+            "\u{e921}",
+            WindowControlArea::Min,
+            false,
+            theme,
+        ))
+        .child(windows_caption_button(
+            if window.is_maximized() {
+                "restore"
+            } else {
+                "maximize"
+            },
+            if window.is_maximized() {
+                "\u{e923}"
+            } else {
+                "\u{e922}"
+            },
+            WindowControlArea::Max,
+            false,
+            theme,
+        ))
+        .child(windows_caption_button(
+            "close",
+            "\u{e8bb}",
+            WindowControlArea::Close,
+            true,
+            theme,
+        ))
+}
+
+fn windows_caption_button(
     id: &'static str,
-    icon: IconName,
+    glyph: &'static str,
     control_area: WindowControlArea,
+    is_close: bool,
     theme: ShellTheme,
 ) -> impl IntoElement {
-    let is_close = matches!(control_area, WindowControlArea::Close);
+    let background = theme.title_bar_background;
+    let foreground = theme.window_control_foreground;
+    let hover_background = if is_close {
+        theme.window_control_close_hover
+    } else {
+        theme.window_control_hover
+    };
     div()
         .id(id)
         .h_full()
-        .w(px(46.))
+        .w(px(44.))
         .flex()
         .items_center()
         .justify_center()
-        .border_l_1()
-        .border_color(rgb(theme.title_bar_border))
-        .text_color(rgb(theme.window_control_foreground))
-        .text_lg()
+        .bg(rgb(background))
+        .text_color(rgb(foreground))
+        .text_size(px(11.))
         .hover(move |style| {
-            if is_close {
-                style
-                    .bg(rgb(theme.window_control_close_hover))
-                    .text_color(rgb(0xffffff))
-            } else {
-                style
-                    .bg(rgb(theme.window_control_hover))
-                    .text_color(rgb(0xffffff))
-            }
+            style
+                .bg(rgb(hover_background))
+                .text_color(rgb(0xffffff))
         })
         .window_control_area(control_area)
-        .child(Icon::new(icon).large().text_color(rgb(theme.window_control_foreground)))
+        .child(glyph)
 }
 
 #[cfg(test)]
